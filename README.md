@@ -6,3 +6,11 @@ clusterduck is a hydra launcher plugin for running jobs in batches on a SLURM cl
 ```bash
 python example/my_app.py --multirun db=postgresql,mysql
 ```
+
+### Dask Version:
+```bash
+# Install dask
+mamba install -c conda-forge dask dask-cuda
+
+python example/my_app.py --config-name=config_bwcluster --multirun db=postgresql,mysql hydra/launcher=clusterduck_slurm '+seed=range(1,20)'
+```
