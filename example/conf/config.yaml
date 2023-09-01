@@ -1,11 +1,18 @@
 defaults:
-  - _self_
-  - override hydra/launcher: clusterduck_slurm
   - db: mysql
+  - override hydra/launcher: clusterduck_slurm
+  - _self_
 
 
 hydra:
+  mode: MULTIRUN
   launcher:
+    timeout_min: 1
+    partition: accelerated
+    gres: gpu:4
+    # additional_parameters:
+    #   mail-type: ALL
+    #   mail-user: balazs.gyenes@kit.edu
     num_of_overrides_per_job: 4
     parallel_executions_in_job: 2
     exclusive_gpu_per_execution: False

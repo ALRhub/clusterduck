@@ -167,7 +167,7 @@ class BaseClusterDuckLauncher(Launcher):
             prefer="processes",
         )(
         delayed(execute_job)(
-                job_id+idx,
+                job_num+idx,
                 overrides,
                 self.hydra_context,
                 sweep_config,
@@ -256,9 +256,9 @@ class BaseClusterDuckLauncher(Launcher):
         return [j.results()[0] for j in jobs]
 
 
-class LocalLauncher(BaseClusterDuckLauncher):
+class ClusterDuckLocalLauncher(BaseClusterDuckLauncher):
     _EXECUTOR = "local"
 
 
-class SlurmLauncher(BaseClusterDuckLauncher):
+class ClusterDuckSlurmLauncher(BaseClusterDuckLauncher):
     _EXECUTOR = "slurm"

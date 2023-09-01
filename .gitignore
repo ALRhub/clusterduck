@@ -6,3 +6,4 @@
 
 # default hydra logging folder
 outputs/
+multirun/

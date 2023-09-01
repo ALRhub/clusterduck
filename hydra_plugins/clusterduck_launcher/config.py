@@ -39,7 +39,7 @@ class SlurmQueueConf(BaseQueueConf):
     """Slurm configuration overrides and specific parameters"""
 
     _target_: str = (
-        "hydra_plugins.clusterduck_launcher.clusterduck_launcher.SlurmLauncher"
+        "hydra_plugins.clusterduck_launcher.clusterduck_launcher.ClusterDuckSlurmLauncher"
     )
 
     # Params are used to configure sbatch, for more info check:
@@ -85,7 +85,7 @@ class SlurmQueueConf(BaseQueueConf):
 @dataclass
 class LocalQueueConf(BaseQueueConf):
     _target_: str = (
-        "hydra_plugins.clusterduck_launcher.clusterduck_launcher.LocalLauncher"
+        "hydra_plugins.clusterduck_launcher.clusterduck_launcher.ClusterDuckLocalLauncher"
     )
 
 
