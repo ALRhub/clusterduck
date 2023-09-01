@@ -4,7 +4,9 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 from multiprocessing import Manager, Pool, current_process, Queue
+from joblib import Parallel, delayed  # type: ignore
 
+from hydra.core.hydra_config import HydraConfig
 from hydra.core.singleton import Singleton
 from hydra.core.utils import JobReturn, filter_overrides, run_job, setup_globals
 from hydra.plugins.launcher import Launcher
@@ -17,27 +19,73 @@ log = logging.getLogger(__name__)
 
 
 def run_run_job(
-        sweep_config: DictConfig,
+        sweep_config: Dict,
         alloc_queue: Queue,
         hydra_context: HydraContext,
         task_function: TaskFunction,
         job_dir_key: str,
 ) -> JobReturn:
     import os
+
+    print(current_process().name)
+
+    sweep_config = OmegaConf.create(sweep_config)
+
     gpu_idx = alloc_queue.get()
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_idx)
 
-    result = run_job(
+    result = None
+    try:
+        result = run_job(
+            hydra_context=hydra_context,
+            task_function=task_function,
+            config=sweep_config,
+            job_dir_key=job_dir_key,
+            job_subdir_key="hydra.sweep.subdir",
+        )
+    except Exception as e:
+        log.error(f"Exception raised while executing job: {e}")
+    finally:
+        alloc_queue.put(gpu_idx)
+
+    return result
+
+def execute_job(
+    idx: int,
+    overrides: Sequence[str],
+    hydra_context: HydraContext,
+    config: DictConfig,
+    task_function: TaskFunction,
+    singleton_state: Dict[Any, Any],
+) -> JobReturn:
+    """Calls `run_job` in parallel"""
+    setup_globals()
+    Singleton.set_state(singleton_state)
+
+    sweep_config = hydra_context.config_loader.load_sweep_config(
+        config, list(overrides)
+    )
+    with open_dict(sweep_config):
+        sweep_config.hydra.job.id = f"{sweep_config.hydra.job.name}_{idx}"
+        sweep_config.hydra.job.num = idx
+    HydraConfig.instance().set_config(sweep_config)
+
+    ret = run_job(
         hydra_context=hydra_context,
-        task_function=task_function,
         config=sweep_config,
-        job_dir_key=job_dir_key,
+        task_function=task_function,
+        job_dir_key="hydra.sweep.dir",
         job_subdir_key="hydra.sweep.subdir",
     )
 
-    alloc_queue.put(gpu_idx)
-    return result
+    return ret
 
+def make_dictconfig_picklable(config: DictConfig, ConfigClass) -> DictConfig:
+    cfg = OmegaConf.merge(
+        OmegaConf.structured(DictConfig),
+        OmegaConf.create(OmegaConf.to_yaml(config, resolve=True))
+    )
+    return cfg
 
 class BaseClusterDuckLauncher(Launcher):
     _EXECUTOR = "abstract"
@@ -102,16 +150,37 @@ class BaseClusterDuckLauncher(Launcher):
                 job.id = submitit.JobEnvironment().job_id  # type: ignore
                 sweep_config.hydra.job.num = job_num
 
-            sweep_configs.append(sweep_config)
+            sweep_configs.append(OmegaConf.to_container(sweep_config))
 
 
-        m = Manager()
-        alloc_queue = m.Queue()
-        for i in range(self.parallel_executions_in_job):
-            alloc_queue.put(i)
-        with Pool(self.parallel_executions_in_job) as pool:
-            return pool.starmap(run_run_job, [(sweep_config, alloc_queue, self.hydra_context, self.task_function, job_dir_key) for sweep_config in sweep_configs])
+        # m = Manager()
+        # alloc_queue = m.Queue()
+        # for i in range(self.parallel_executions_in_job):
+        #     alloc_queue.put(i)
+        # with Pool(self.parallel_executions_in_job) as pool:
+        #     a = pool.starmap(run_run_job, [(sweep_config, alloc_queue, self.hydra_context, self.task_function, job_dir_key) for sweep_config in sweep_configs])
+        # return a
 
+        runs = Parallel(
+            n_jobs=self.parallel_executions_in_job,
+            backend="loky",
+            prefer="processes",
+        )(
+        delayed(execute_job)(
+                job_id+idx,
+                overrides,
+                self.hydra_context,
+                sweep_config,
+                self.task_function,
+                singleton_state,
+            )
+            for idx, overrides in enumerate(sweep_configs)
+        )
+
+        assert isinstance(runs, List)
+        for run in runs:
+            assert isinstance(run, JobReturn)
+        return runs
 
     def checkpoint(self, *args: Any, **kwargs: Any) -> Any:
         """Resubmit the current callable at its current state with the same initial arguments."""
