@@ -3,3 +3,6 @@
 
 # Python module metadata folder
 *.egg-info
+
+# default hydra logging folder
+outputs/
