@@ -94,7 +94,7 @@ ConfigStore.instance().store(
     group="hydra/launcher",
     name="clusterduck_local",
     node=LocalQueueConf(),
-    provider="clusterduck_launcher"
+    provider="clusterduck",
 )
 
 
@@ -102,5 +102,5 @@ ConfigStore.instance().store(
     group="hydra/launcher",
     name="clusterduck_slurm",
     node=SlurmQueueConf(),
-    provider="clusterduck_launcher",
+    provider="clusterduck",
 )
