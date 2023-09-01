@@ -28,13 +28,18 @@ class BaseQueueConf:
     # redirect stderr to stdout
     stderr_to_stdout: bool = False
 
+    # Following parameters are clusterduck specific
+    num_of_overrides_per_job: int = 1
+    parallel_executions_in_job: int = 1
+    exclusive_gpu_per_execution: bool = False
+
 
 @dataclass
 class SlurmQueueConf(BaseQueueConf):
     """Slurm configuration overrides and specific parameters"""
 
     _target_: str = (
-        "hydra_plugins.hydra_submitit_launcher.submitit_launcher.SlurmLauncher"
+        "hydra_plugins.clusterduck_launcher.clusterduck_launcher.SlurmLauncher"
     )
 
     # Params are used to configure sbatch, for more info check:
@@ -80,22 +85,22 @@ class SlurmQueueConf(BaseQueueConf):
 @dataclass
 class LocalQueueConf(BaseQueueConf):
     _target_: str = (
-        "hydra_plugins.hydra_submitit_launcher.submitit_launcher.LocalLauncher"
+        "hydra_plugins.clusterduck_launcher.clusterduck_launcher.LocalLauncher"
     )
 
 
 # finally, register two different choices:
 ConfigStore.instance().store(
     group="hydra/launcher",
-    name="submitit_local",
+    name="clusterduck_local",
     node=LocalQueueConf(),
-    provider="submitit_launcher",
+    provider="clusterduck_launcher"
 )
 
 
 ConfigStore.instance().store(
     group="hydra/launcher",
-    name="submitit_slurm",
+    name="clusterduck_slurm",
     node=SlurmQueueConf(),
-    provider="submitit_launcher",
+    provider="clusterduck_launcher",
 )

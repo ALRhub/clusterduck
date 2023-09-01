@@ -1,9 +1,11 @@
 defaults:
-  - db: mysql
   - _self_
+  - db: mysql
 
 
-hydra.launcher:
-  _target_: hydra_plugins.clusterduck_launcher.clusterduck_launcher.BaseClusterDuckLauncher
-  foo: 10
-  bar: abcde
+hydra:
+  launcher:
+    _target_: hydra_plugins.clusterduck_launcher.clusterduck_launcher.LocalLauncher
+    num_of_overrides_per_job: 4
+    parallel_executions_in_job: 2
+    exclusive_gpu_per_execution: False
