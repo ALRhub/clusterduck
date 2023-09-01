@@ -4,7 +4,8 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 from multiprocessing import Manager, Pool, current_process, Queue
-from joblib import Parallel, delayed  # type: ignore
+from joblib import Parallel, delayed, wrap_non_picklable_objects  # type: ignore
+import joblib
 
 from hydra.core.hydra_config import HydraConfig
 from hydra.core.singleton import Singleton
@@ -29,7 +30,7 @@ def run_run_job(
 
     print(current_process().name)
 
-    sweep_config = OmegaConf.create(sweep_config)
+    # sweep_config = OmegaConf.create(sweep_config)
 
     gpu_idx = alloc_queue.get()
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_idx)
@@ -50,6 +51,7 @@ def run_run_job(
 
     return result
 
+
 def execute_job(
     idx: int,
     overrides: Sequence[str],
@@ -62,9 +64,8 @@ def execute_job(
     setup_globals()
     Singleton.set_state(singleton_state)
 
-    sweep_config = hydra_context.config_loader.load_sweep_config(
-        config, list(overrides)
-    )
+    sweep_config = hydra_context.config_loader.load_sweep_config(config, list(overrides))
+    sweep_config = OmegaConf.create(sweep_config)
     with open_dict(sweep_config):
         sweep_config.hydra.job.id = f"{sweep_config.hydra.job.name}_{idx}"
         sweep_config.hydra.job.num = idx
@@ -132,8 +133,10 @@ class BaseClusterDuckLauncher(Launcher):
         job_id: str,
         singleton_state: Dict[type, Singleton],
     ) -> JobReturn:
-        # lazy import to ensure plugin discovery remains fast
-        import submitit
+        import os
+        from dask.distributed import Client as DaskClient
+        from dask_cuda import LocalCUDACluster
+
 
         assert self.hydra_context is not None
         assert self.config is not None
@@ -141,16 +144,16 @@ class BaseClusterDuckLauncher(Launcher):
 
         Singleton.set_state(singleton_state)
         setup_globals()
-        sweep_configs = []
-        for sweep_overrides in sweep_overrides_list:
-            sweep_config = self.hydra_context.config_loader.load_sweep_config(self.config, sweep_overrides)
-
-            with open_dict(sweep_config.hydra.job) as job:
-                # Populate new job variables
-                job.id = submitit.JobEnvironment().job_id  # type: ignore
-                sweep_config.hydra.job.num = job_num
-
-            sweep_configs.append(OmegaConf.to_container(sweep_config))
+        # sweep_configs = []
+        # for sweep_overrides in sweep_overrides_list:
+        #     sweep_config = self.hydra_context.config_loader.load_sweep_config(self.config, sweep_overrides)
+        #
+        #     with open_dict(sweep_config.hydra.job) as job:
+        #         # Populate new job variables
+        #         job.id = submitit.JobEnvironment().job_id  # type: ignore
+        #         sweep_config.hydra.job.num = job_num
+        #
+        #     sweep_configs.append(sweep_config)#OmegaConf.to_container(sweep_config))
 
 
         # m = Manager()
@@ -158,24 +161,45 @@ class BaseClusterDuckLauncher(Launcher):
         # for i in range(self.parallel_executions_in_job):
         #     alloc_queue.put(i)
         # with Pool(self.parallel_executions_in_job) as pool:
-        #     a = pool.starmap(run_run_job, [(sweep_config, alloc_queue, self.hydra_context, self.task_function, job_dir_key) for sweep_config in sweep_configs])
+        #     a = pool.starmap(execute_job, [(job_num, overrides, self.hydra_context, self.config, self.task_function, singleton_state) for overrides in sweep_overrides_list])
         # return a
 
-        runs = Parallel(
-            n_jobs=self.parallel_executions_in_job,
-            backend="loky",
-            prefer="processes",
-        )(
-        delayed(execute_job)(
-                job_id+idx,
-                overrides,
-                self.hydra_context,
-                sweep_config,
-                self.task_function,
-                singleton_state,
+        # r = [execute_job(
+        #         job_num,
+        #         overrides,
+        #         self.hydra_context,
+        #         self.config,
+        #         self.task_function,
+        #         singleton_state,
+        #     )
+        #     for idx, overrides in enumerate(sweep_overrides_list)]
+        #
+        # return r
+
+        print(os.environ.get("CUDA_VISIBLE_DEVICES", "No GPU"), flush=True)
+        print(current_process().name, flush=True)
+        # lazy import to ensure plugin discovery remains fast
+
+
+        cluster = LocalCUDACluster()
+        client = DaskClient(cluster)
+
+        with joblib.parallel_config(backend="dask"):
+            runs = Parallel(
+                n_jobs=1,
+                backend="loky",
+                prefer="processes",
+            )(
+            delayed(execute_job)(
+                    job_num,
+                    overrides,
+                    self.hydra_context,
+                    self.config,
+                    self.task_function,
+                    singleton_state,
+                )
+                for idx, overrides in enumerate(sweep_overrides_list)
             )
-            for idx, overrides in enumerate(sweep_configs)
-        )
 
         assert isinstance(runs, List)
         for run in runs:
@@ -247,13 +271,16 @@ class BaseClusterDuckLauncher(Launcher):
                     job_overrides_sublist,
                     "hydra.sweep.dir",
                     idx+initial_job_idx,
-                    f"job_id_for_{idx+initial_job_idx}",
+                    f"job_id_for_{idx}",
                     Singleton.get_state(),
                 )
             )
 
         jobs = executor.map_array(self, *zip(*job_params))
-        return [j.results()[0] for j in jobs]
+        results = [j.result() for j in jobs]
+        results = [item for sublist in results for item in sublist]
+        return results
+        # return [j.results()[0] for j in jobs]
 
 
 class LocalLauncher(BaseClusterDuckLauncher):

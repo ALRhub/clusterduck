@@ -1,7 +1,6 @@
 defaults:
-  - _self_
-  - override hydra/launcher: clusterduck_slurm
   - db: mysql
+  - _self_
 
 
 hydra:
@@ -9,3 +8,7 @@ hydra:
     num_of_overrides_per_job: 4
     parallel_executions_in_job: 2
     exclusive_gpu_per_execution: False
+    gpus_per_node: 1
+  job:
+    env_set:
+      CUDA_VISIBLE_DEVICES: "0"
