@@ -14,8 +14,7 @@ hydra:
     mem_gb: 32
     timeout_min: 30
     partition: "dev_gpu_4"
-    gres:
-      - "gpu:4"
+    gres: "gpu:4"
   job:
     env_set:
       CUDA_VISIBLE_DEVICES: "0"
