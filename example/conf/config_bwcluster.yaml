@@ -1,0 +1,21 @@
+defaults:
+  - db: mysql
+  - _self_
+
+
+hydra:
+  launcher:
+    num_of_overrides_per_job: 8
+    parallel_executions_in_job: 4
+    exclusive_gpu_per_execution: False
+    gpus_per_node: 4
+    cpus_per_task: 10
+
+    mem_gb: 32
+    timeout_min: 30
+    partition: "dev_gpu_4"
+    gres:
+      - "gpu:4"
+  job:
+    env_set:
+      CUDA_VISIBLE_DEVICES: "0"
