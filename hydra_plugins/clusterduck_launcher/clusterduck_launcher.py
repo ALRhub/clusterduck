@@ -19,38 +19,6 @@ from .config import BaseQueueConf
 log = logging.getLogger(__name__)
 
 
-def run_run_job(
-        sweep_config: Dict,
-        alloc_queue: Queue,
-        hydra_context: HydraContext,
-        task_function: TaskFunction,
-        job_dir_key: str,
-) -> JobReturn:
-    import os
-
-    print(current_process().name)
-
-    # sweep_config = OmegaConf.create(sweep_config)
-
-    gpu_idx = alloc_queue.get()
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_idx)
-
-    result = None
-    try:
-        result = run_job(
-            hydra_context=hydra_context,
-            task_function=task_function,
-            config=sweep_config,
-            job_dir_key=job_dir_key,
-            job_subdir_key="hydra.sweep.subdir",
-        )
-    except Exception as e:
-        log.error(f"Exception raised while executing job: {e}")
-    finally:
-        alloc_queue.put(gpu_idx)
-
-    return result
-
 
 def execute_job(
     idx: int,
@@ -81,12 +49,6 @@ def execute_job(
 
     return ret
 
-def make_dictconfig_picklable(config: DictConfig, ConfigClass) -> DictConfig:
-    cfg = OmegaConf.merge(
-        OmegaConf.structured(DictConfig),
-        OmegaConf.create(OmegaConf.to_yaml(config, resolve=True))
-    )
-    return cfg
 
 class BaseClusterDuckLauncher(Launcher):
     _EXECUTOR = "abstract"
@@ -133,7 +95,6 @@ class BaseClusterDuckLauncher(Launcher):
         job_id: str,
         singleton_state: Dict[type, Singleton],
     ) -> JobReturn:
-        import os
         from dask.distributed import Client as DaskClient
         from dask_cuda import LocalCUDACluster
 
@@ -144,50 +105,15 @@ class BaseClusterDuckLauncher(Launcher):
 
         Singleton.set_state(singleton_state)
         setup_globals()
-        # sweep_configs = []
-        # for sweep_overrides in sweep_overrides_list:
-        #     sweep_config = self.hydra_context.config_loader.load_sweep_config(self.config, sweep_overrides)
-        #
-        #     with open_dict(sweep_config.hydra.job) as job:
-        #         # Populate new job variables
-        #         job.id = submitit.JobEnvironment().job_id  # type: ignore
-        #         sweep_config.hydra.job.num = job_num
-        #
-        #     sweep_configs.append(sweep_config)#OmegaConf.to_container(sweep_config))
-
-
-        # m = Manager()
-        # alloc_queue = m.Queue()
-        # for i in range(self.parallel_executions_in_job):
-        #     alloc_queue.put(i)
-        # with Pool(self.parallel_executions_in_job) as pool:
-        #     a = pool.starmap(execute_job, [(job_num, overrides, self.hydra_context, self.config, self.task_function, singleton_state) for overrides in sweep_overrides_list])
-        # return a
-
-        # r = [execute_job(
-        #         job_num,
-        #         overrides,
-        #         self.hydra_context,
-        #         self.config,
-        #         self.task_function,
-        #         singleton_state,
-        #     )
-        #     for idx, overrides in enumerate(sweep_overrides_list)]
-        #
-        # return r
-
-        print(os.environ.get("CUDA_VISIBLE_DEVICES", "No GPU"), flush=True)
-        print(current_process().name, flush=True)
-        # lazy import to ensure plugin discovery remains fast
-
 
         cluster = LocalCUDACluster()
         client = DaskClient(cluster)
 
+        assert self.parallel_executions_in_job <= len(cluster.workers), f"Number of workers {len(cluster.workers)} is less than parallel_executions_in_job {self.parallel_executions_in_job}"
+
         with joblib.parallel_config(backend="dask"):
             runs = Parallel(
-                n_jobs=1,
-                backend="loky",
+                n_jobs=self.parallel_executions_in_job,
                 prefer="processes",
             )(
             delayed(execute_job)(
