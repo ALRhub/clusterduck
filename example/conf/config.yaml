@@ -1,0 +1,9 @@
+defaults:
+  - db: mysql
+  - _self_
+
+
+hydra.launcher:
+  _target_: hydra_plugins.clusterduck_launcher.clusterduck_launcher.BaseClusterDuckLauncher
+  foo: 10
+  bar: abcde
