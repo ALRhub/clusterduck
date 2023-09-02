@@ -102,15 +102,17 @@ class BaseClusterDuckLauncher(Launcher):
             for done_process in done_processes:
                 resource_id = sentinels.index(done_process)
                 processes[resource_id].join()
-                if manager_pipes[resource_id].poll():
-                    # process succeeded and returned a result
-                    result = manager_pipes[resource_id].recv()
-                    if not isinstance(result, Exception):
-                        result = pickle.loads(result)
-                    results.append(result)
-                else:
-                    # process did not send result, so it must have failed
-                    results.append(JobReturn(status=JobStatus.FAILED))
+
+                if not manager_pipes[resource_id].poll():
+                    raise RuntimeError("Worker process sent no return value.")
+                result = manager_pipes[resource_id].recv()
+
+                if isinstance(result, Exception):
+                    # TODO: don't raise here, try to run remaining overrides instead
+                    raise result
+
+                result = pickle.loads(result)
+                results.append(result)
                 processes[resource_id] = mp.Process(
                     target=self,
                     kwargs=dict(
@@ -142,8 +144,6 @@ class BaseClusterDuckLauncher(Launcher):
             worker_pipe.close()
 
         for result in results:
-            if isinstance(result, Exception):
-                raise RuntimeError("Worker failed") from result
             assert isinstance(result, JobReturn)
             assert result.status != JobStatus.FAILED
 
