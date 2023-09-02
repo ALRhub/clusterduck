@@ -19,7 +19,7 @@ from omegaconf import DictConfig, OmegaConf, open_dict
 
 from .config import BaseQueueConf
 
-log = logging.getLogger(__name__)
+log = logging.getLogger("clusterduck")
 
 
 class BaseClusterDuckLauncher(Launcher):
@@ -109,10 +109,6 @@ class BaseClusterDuckLauncher(Launcher):
                     raise RuntimeError("Worker process sent no return value.")
                 result = manager_pipes[resource_id].recv()
 
-                if isinstance(result, Exception):
-                    # TODO: don't raise here, try to run remaining overrides instead
-                    raise result
-
                 results.append(cloudpickle.loads(result))
                 processes[resource_id] = mp.Process(
                     target=self,
@@ -137,19 +133,22 @@ class BaseClusterDuckLauncher(Launcher):
                 raise RuntimeError("Worker process sent no return value.")
             result = manager_pipes[resource_id].recv()
 
-            if isinstance(result, Exception):
-                # TODO: don't raise here, try to run remaining overrides instead
-                raise result
-
             results.append(cloudpickle.loads(result))
 
         for manager_pipe, worker_pipe in zip(manager_pipes, worker_pipes):
             manager_pipe.close()
             worker_pipe.close()
 
-        for result in results:
-            assert isinstance(result, JobReturn)
-            assert result.status != JobStatus.FAILED
+        exceptions = [
+            result.return_value
+            for result in results
+            if result.status == JobStatus.FAILED
+        ]
+        if exceptions:
+            # TODO: ExceptionGroup exists in Python 3.11 and up
+            raise RuntimeError(
+                f"{len(exceptions)} workers failed due to errors!"
+            ) from exceptions[0]
 
         return results
 
@@ -167,42 +166,37 @@ class BaseClusterDuckLauncher(Launcher):
         import cloudpickle
         import submitit
 
+        assert self.hydra_context is not None
+        assert self.config is not None
+        assert self.task_function is not None
+
+        Singleton.set_state(singleton_state)
+        setup_globals()
+        sweep_config = self.hydra_context.config_loader.load_sweep_config(
+            self.config, sweep_overrides
+        )
+
+        with open_dict(sweep_config.hydra.job) as job:
+            # Populate new job variables
+            job.id = submitit.JobEnvironment().job_id  # type: ignore
+            sweep_config.hydra.job.num = job_num
+
+        # assign resources
+        # TODO: abstract this
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(resources)
+
+        # TODO: separate clusterduck logging (global across overrides) from job logging (override-local)
         logger = logging.getLogger("clusterduck")
-
-        try:
-            assert self.hydra_context is not None
-            assert self.config is not None
-            assert self.task_function is not None
-
-            Singleton.set_state(singleton_state)
-            setup_globals()
-            sweep_config = self.hydra_context.config_loader.load_sweep_config(
-                self.config, sweep_overrides
-            )
-
-            with open_dict(sweep_config.hydra.job) as job:
-                # Populate new job variables
-                job.id = submitit.JobEnvironment().job_id  # type: ignore
-                sweep_config.hydra.job.num = job_num
-
-            # assign resources
-            # TODO: abstract this
-            os.environ["CUDA_VISIBLE_DEVICES"] = str(resources)
-
-            logger.info(f"Running job {job_num}")
-            ret = run_job(
-                hydra_context=self.hydra_context,
-                task_function=self.task_function,
-                config=sweep_config,
-                job_dir_key=job_dir_key,
-                job_subdir_key="hydra.sweep.subdir",
-            )
-            pipe.send(cloudpickle.dumps(ret))
-            logger.info(f"Job {job_num} completed.")
-        except Exception as error:
-            pipe.send(error)
-            logger.error(f"Job {job_num} threw an exception.")
-            logger.error(f"{error}")
+        logger.info(f"Running job {job_num}")
+        ret = run_job(
+            hydra_context=self.hydra_context,
+            task_function=self.task_function,
+            config=sweep_config,
+            job_dir_key=job_dir_key,
+            job_subdir_key="hydra.sweep.subdir",
+        )
+        logger.info(f"Job {job_num} completed.")
+        pipe.send(cloudpickle.dumps(ret))
 
     def checkpoint(self, *args: Any, **kwargs: Any) -> Any:
         """Resubmit the current callable at its current state with the same initial arguments."""
@@ -310,7 +304,7 @@ class BaseClusterDuckLauncher(Launcher):
 
                 with open_dict(sweep_config.hydra.job) as job:
                     # Populate new job variables
-                    job.id = submitit.JobEnvironment().job_id  # type: ignore
+                    # Cannot set job ID to slurm job ID as we are not inside slurm job
                     sweep_config.hydra.job.num = job_num
 
                 result = run_job(
