@@ -251,8 +251,6 @@ class BaseClusterDuckLauncher(Launcher):
                     log.info(f"Result #{i} contains {len(result)} job returns")
                     for j, job_return in enumerate(result):
                         log.info(f"Job return #{j}: {job_return}")
-            raise NotImplementedError
-
             return [result for j in jobs for result in j.results()[0]]
         else:
             results: list[JobReturn] = []
