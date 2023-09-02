@@ -1,12 +1,16 @@
 import logging
-import multiprocessing as mp
 import os
-from multiprocessing.connection import wait
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 from hydra.core.singleton import Singleton
-from hydra.core.utils import JobReturn, filter_overrides, run_job, setup_globals
+from hydra.core.utils import (
+    JobReturn,
+    JobStatus,
+    filter_overrides,
+    run_job,
+    setup_globals,
+)
 from hydra.plugins.launcher import Launcher
 from hydra.types import HydraContext, TaskFunction
 from omegaconf import DictConfig, OmegaConf, open_dict
@@ -21,9 +25,10 @@ class BaseClusterDuckLauncher(Launcher):
 
     def __init__(
         self,
-        num_of_overrides_per_job: int = 1,
-        parallel_executions_in_job: int = 1,
-        exclusive_gpu_per_execution: bool = False,
+        num_of_overrides_per_job: int,
+        parallel_executions_in_job: int,
+        exclusive_gpu_per_execution: bool,
+        wait_for_completion: bool,
         **params: Any,
     ) -> None:
         self.params = {}
@@ -40,6 +45,7 @@ class BaseClusterDuckLauncher(Launcher):
         self.num_of_overrides_per_job = num_of_overrides_per_job
         self.parallel_executions_in_job = parallel_executions_in_job
         self.exclusive_gpu_per_execution = exclusive_gpu_per_execution
+        self.wait_for_completion = wait_for_completion
 
     def setup(
         self,
@@ -60,6 +66,9 @@ class BaseClusterDuckLauncher(Launcher):
         job_id: str,
         singleton_state: Dict[type, Singleton],
     ) -> list[JobReturn]:
+        import multiprocessing as mp
+        from multiprocessing.connection import wait
+
         processes: list[mp.Process] = []
         n_processes = min(self.parallel_executions_in_job, len(sweep_overrides_list))
         for i in range(n_processes):
@@ -159,6 +168,7 @@ class BaseClusterDuckLauncher(Launcher):
         self, job_overrides: Sequence[Sequence[str]], initial_job_idx: int
     ) -> Sequence[JobReturn]:
         # lazy import to ensure plugin discovery remains fast
+        import copy
         import math
 
         import submitit
@@ -234,16 +244,34 @@ class BaseClusterDuckLauncher(Launcher):
         jobs = executor.map_array(self.process_manager, *zip(*job_params))
 
         # TODO: how to give a return value without waiting for job completion
-        for job in jobs:
-            log.info(f"Job has {len(job.results())} results:")
-            for i, result in enumerate(job.results()):
-                log.info(f"Result {i} has length {len(result)}")
-                for j, job_result in enumerate(result):
-                    log.info(f"Job result {j}: {job_result}")
+        if self.wait_for_completion:
+            for job in jobs:
+                log.info(f"Job has {len(job.results())} results:")
+                for i, result in enumerate(job.results()):
+                    log.info(f"Result #{i} contains {len(result)} job returns")
+                    for j, job_return in enumerate(result):
+                        log.info(f"Job return #{j}: {job_return}")
+            raise NotImplementedError
 
-        return [
-            result for j in jobs for job_result in j.results() for result in job_result
-        ]
+            return [result for j in jobs for result in j.results()[0]]
+        else:
+            results: list[JobReturn] = []
+            for override in job_overrides:
+                override_config = self.hydra_context.config_loader.load_sweep_config(
+                    self.config, override
+                )
+                result = JobReturn(
+                    cfg=copy.deepcopy(override_config),
+                    # hydra_cfg=
+                    # overrides=
+                    working_dir=str(
+                        OmegaConf.select(override_config, "hydra.sweep.dir")
+                    ),
+                    status=JobStatus.COMPLETED,
+                )
+                result.return_value = None
+                results.append(result)
+            return results
 
 
 class ClusterDuckLocalLauncher(BaseClusterDuckLauncher):
