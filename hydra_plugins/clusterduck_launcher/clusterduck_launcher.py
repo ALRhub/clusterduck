@@ -69,8 +69,9 @@ class BaseClusterDuckLauncher(Launcher):
         singleton_state: Dict[type, Singleton],
     ) -> list[JobReturn]:
         import multiprocessing as mp
-        import pickle
         from multiprocessing.connection import wait
+
+        import cloudpickle
 
         processes: list[mp.Process] = []
         n_processes = min(self.parallel_executions_in_job, len(sweep_overrides_list))
@@ -111,8 +112,7 @@ class BaseClusterDuckLauncher(Launcher):
                     # TODO: don't raise here, try to run remaining overrides instead
                     raise result
 
-                result = pickle.loads(result)
-                results.append(result)
+                results.append(cloudpickle.loads(result))
                 processes[resource_id] = mp.Process(
                     target=self,
                     kwargs=dict(
@@ -132,12 +132,15 @@ class BaseClusterDuckLauncher(Launcher):
 
         for resource_id, process in enumerate(processes):
             process.join()
-            if manager_pipes[resource_id].poll():
-                # process succeeded and returned a result
-                results.append(manager_pipes[resource_id].recv())
-            else:
-                # process did not send result, so it must have failed
-                results.append(JobReturn(status=JobStatus.FAILED))
+            if not manager_pipes[resource_id].poll():
+                raise RuntimeError("Worker process sent no return value.")
+            result = manager_pipes[resource_id].recv()
+
+            if isinstance(result, Exception):
+                # TODO: don't raise here, try to run remaining overrides instead
+                raise result
+
+            results.append(cloudpickle.loads(result))
 
         for manager_pipe, worker_pipe in zip(manager_pipes, worker_pipes):
             manager_pipe.close()
