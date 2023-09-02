@@ -137,6 +137,12 @@ class BaseClusterDuckLauncher(Launcher):
             manager_pipe.close()
             worker_pipe.close()
 
+        for result in results:
+            if isinstance(result, Exception):
+                raise result
+            assert isinstance(result, JobReturn)
+            assert result.status != JobStatus.FAILED
+
         return results
 
     def __call__(
