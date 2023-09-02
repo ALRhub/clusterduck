@@ -139,7 +139,7 @@ class BaseClusterDuckLauncher(Launcher):
 
         for result in results:
             if isinstance(result, Exception):
-                raise result
+                raise RuntimeError("Worker failed") from result
             assert isinstance(result, JobReturn)
             assert result.status != JobStatus.FAILED
 
@@ -193,6 +193,7 @@ class BaseClusterDuckLauncher(Launcher):
         except Exception as error:
             pipe.send(error)
             logger.info(f"Job {job_id} threw an exception.")
+            logger.info(f"{error}")
 
     def checkpoint(self, *args: Any, **kwargs: Any) -> Any:
         """Resubmit the current callable at its current state with the same initial arguments."""
