@@ -107,6 +107,7 @@ class BaseClusterDuckLauncher(Launcher):
             process.join()
 
         # TODO: get return value from overrides and return here
+        return [JobReturn() for _ in sweep_overrides_list]
 
     def __call__(
         self,
@@ -156,7 +157,7 @@ class BaseClusterDuckLauncher(Launcher):
 
     def launch(
         self, job_overrides: Sequence[Sequence[str]], initial_job_idx: int
-    ) -> None:
+    ) -> Sequence[JobReturn]:
         # lazy import to ensure plugin discovery remains fast
         import math
 
@@ -230,9 +231,19 @@ class BaseClusterDuckLauncher(Launcher):
             )
 
         # launch all
-        executor.map_array(self.process_manager, *zip(*job_params))
+        jobs = executor.map_array(self.process_manager, *zip(*job_params))
 
-        # TODO: should there be any return value here? we don't want to wait for jobs to complete
+        # TODO: how to give a return value without waiting for job completion
+        for job in jobs:
+            print(f"Job has {len(job.results())} results:")
+            for i, result in enumerate(job.results()):
+                print(f"Result {i} has length {len(result)}")
+                for j, job_result in enumerate(result):
+                    print(f"Job result {j}: {job_result}")
+
+        return [
+            result for j in jobs for job_result in j.results() for result in job_result
+        ]
 
 
 class ClusterDuckLocalLauncher(BaseClusterDuckLauncher):
