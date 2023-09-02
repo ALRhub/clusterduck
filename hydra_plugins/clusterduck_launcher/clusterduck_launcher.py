@@ -69,6 +69,7 @@ class BaseClusterDuckLauncher(Launcher):
         singleton_state: Dict[type, Singleton],
     ) -> list[JobReturn]:
         import multiprocessing as mp
+        import pickle
         from multiprocessing.connection import wait
 
         processes: list[mp.Process] = []
@@ -103,7 +104,10 @@ class BaseClusterDuckLauncher(Launcher):
                 processes[resource_id].join()
                 if manager_pipes[resource_id].poll():
                     # process succeeded and returned a result
-                    results.append(manager_pipes[resource_id].recv())
+                    result = manager_pipes[resource_id].recv()
+                    if not isinstance(result, Exception):
+                        result = pickle.loads(result)
+                    results.append(result)
                 else:
                     # process did not send result, so it must have failed
                     results.append(JobReturn(status=JobStatus.FAILED))
@@ -156,6 +160,7 @@ class BaseClusterDuckLauncher(Launcher):
         resources,
     ) -> None:
         # lazy import to ensure plugin discovery remains fast
+        import cloudpickle
         import submitit
 
         logger = logging.getLogger("clusterduck")
@@ -188,7 +193,7 @@ class BaseClusterDuckLauncher(Launcher):
                 job_dir_key=job_dir_key,
                 job_subdir_key="hydra.sweep.subdir",
             )
-            pipe.send(ret)
+            pipe.send(cloudpickle.dumps(ret))
             logger.info(f"Job {job_id} completed.")
         except Exception as error:
             pipe.send(error)
