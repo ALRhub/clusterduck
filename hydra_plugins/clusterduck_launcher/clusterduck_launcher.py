@@ -152,33 +152,41 @@ class BaseClusterDuckLauncher(Launcher):
         # lazy import to ensure plugin discovery remains fast
         import submitit
 
-        assert self.hydra_context is not None
-        assert self.config is not None
-        assert self.task_function is not None
+        logger = logging.getLogger("clusterduck")
 
-        Singleton.set_state(singleton_state)
-        setup_globals()
-        sweep_config = self.hydra_context.config_loader.load_sweep_config(
-            self.config, sweep_overrides
-        )
+        try:
+            assert self.hydra_context is not None
+            assert self.config is not None
+            assert self.task_function is not None
 
-        with open_dict(sweep_config.hydra.job) as job:
-            # Populate new job variables
-            job.id = submitit.JobEnvironment().job_id  # type: ignore
-            sweep_config.hydra.job.num = job_num
+            Singleton.set_state(singleton_state)
+            setup_globals()
+            sweep_config = self.hydra_context.config_loader.load_sweep_config(
+                self.config, sweep_overrides
+            )
 
-        # assign resources
-        # TODO: abstract this
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(resources)
+            with open_dict(sweep_config.hydra.job) as job:
+                # Populate new job variables
+                job.id = submitit.JobEnvironment().job_id  # type: ignore
+                sweep_config.hydra.job.num = job_num
 
-        ret = run_job(
-            hydra_context=self.hydra_context,
-            task_function=self.task_function,
-            config=sweep_config,
-            job_dir_key=job_dir_key,
-            job_subdir_key="hydra.sweep.subdir",
-        )
-        pipe.send(ret)
+            # assign resources
+            # TODO: abstract this
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(resources)
+
+            logger.info(f"Running job {job_id}")
+            ret = run_job(
+                hydra_context=self.hydra_context,
+                task_function=self.task_function,
+                config=sweep_config,
+                job_dir_key=job_dir_key,
+                job_subdir_key="hydra.sweep.subdir",
+            )
+            pipe.send(ret)
+            logger.info(f"Job {job_id} completed.")
+        except Exception as error:
+            pipe.send(error)
+            logger.info(f"Job {job_id} threw an exception.")
 
     def checkpoint(self, *args: Any, **kwargs: Any) -> Any:
         """Resubmit the current callable at its current state with the same initial arguments."""
