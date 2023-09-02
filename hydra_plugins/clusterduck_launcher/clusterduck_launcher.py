@@ -61,7 +61,7 @@ class BaseClusterDuckLauncher(Launcher):
         singleton_state: Dict[type, Singleton],
     ) -> list[JobReturn]:
         processes: list[mp.Process] = []
-        n_processes = max(self.parallel_executions_in_job, len(sweep_overrides_list))
+        n_processes = min(self.parallel_executions_in_job, len(sweep_overrides_list))
         for i in range(n_processes):
             # TODO: consider using forkserver context to create processes
             process = mp.Process(
@@ -235,11 +235,11 @@ class BaseClusterDuckLauncher(Launcher):
 
         # TODO: how to give a return value without waiting for job completion
         for job in jobs:
-            print(f"Job has {len(job.results())} results:")
+            log.info(f"Job has {len(job.results())} results:")
             for i, result in enumerate(job.results()):
-                print(f"Result {i} has length {len(result)}")
+                log.info(f"Result {i} has length {len(result)}")
                 for j, job_result in enumerate(result):
-                    print(f"Job result {j}: {job_result}")
+                    log.info(f"Job result {j}: {job_result}")
 
         return [
             result for j in jobs for job_result in j.results() for result in job_result
