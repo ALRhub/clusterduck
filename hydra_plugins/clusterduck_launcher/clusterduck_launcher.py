@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 import os
 from pathlib import Path
@@ -71,6 +73,7 @@ class BaseClusterDuckLauncher(Launcher):
 
         processes: list[mp.Process] = []
         n_processes = min(self.parallel_executions_in_job, len(sweep_overrides_list))
+        manager_pipes, worker_pipes = zip(*[mp.Pipe() for _ in range(n_processes)])
         for i in range(n_processes):
             # TODO: consider using forkserver context to create processes
             process = mp.Process(
@@ -81,21 +84,29 @@ class BaseClusterDuckLauncher(Launcher):
                     job_num=job_num,
                     job_id=job_id,
                     singleton_state=singleton_state,
+                    pipe=worker_pipes[i],
                     resources=i,
                 ),
             )
             process.start()
             processes.append(process)
 
+        results: list[JobReturn] = []
         submitted_overrides = n_processes
         while submitted_overrides < len(sweep_overrides_list):
-            # wait for next override to finish
+            # wait for next override to finish or fail
             sentinels = [proc.sentinel for proc in processes]
             done_processes = wait(sentinels)
 
             for done_process in done_processes:
                 resource_id = sentinels.index(done_process)
                 processes[resource_id].join()
+                if manager_pipes[resource_id].poll():
+                    # process succeeded and returned a result
+                    results.append(manager_pipes[resource_id].recv())
+                else:
+                    # process did not send result, so it must have failed
+                    results.append(JobReturn(status=JobStatus.FAILED))
                 processes[resource_id] = mp.Process(
                     target=self,
                     kwargs=dict(
@@ -104,6 +115,7 @@ class BaseClusterDuckLauncher(Launcher):
                         job_num=job_num,
                         job_id=job_id,
                         singleton_state=singleton_state,
+                        pipe=worker_pipes[resource_id],
                         resources=resource_id,
                     ),
                 )
@@ -112,11 +124,20 @@ class BaseClusterDuckLauncher(Launcher):
                 if submitted_overrides == len(sweep_overrides_list):
                     break
 
-        for process in processes:
+        for resource_id, process in enumerate(processes):
             process.join()
+            if manager_pipes[resource_id].poll():
+                # process succeeded and returned a result
+                results.append(manager_pipes[resource_id].recv())
+            else:
+                # process did not send result, so it must have failed
+                results.append(JobReturn(status=JobStatus.FAILED))
 
-        # TODO: get return value from overrides and return here
-        return [JobReturn() for _ in sweep_overrides_list]
+        for manager_pipe, worker_pipe in zip(manager_pipes, worker_pipes):
+            manager_pipe.close()
+            worker_pipe.close()
+
+        return results
 
     def __call__(
         self,
@@ -125,8 +146,9 @@ class BaseClusterDuckLauncher(Launcher):
         job_num: int,
         job_id: str,
         singleton_state: Dict[type, Singleton],
+        pipe: mp.Connection,
         resources,
-    ) -> JobReturn:
+    ) -> None:
         # lazy import to ensure plugin discovery remains fast
         import submitit
 
@@ -149,13 +171,14 @@ class BaseClusterDuckLauncher(Launcher):
         # TODO: abstract this
         os.environ["CUDA_VISIBLE_DEVICES"] = str(resources)
 
-        return run_job(
+        ret = run_job(
             hydra_context=self.hydra_context,
             task_function=self.task_function,
             config=sweep_config,
             job_dir_key=job_dir_key,
             job_subdir_key="hydra.sweep.subdir",
         )
+        pipe.send(ret)
 
     def checkpoint(self, *args: Any, **kwargs: Any) -> Any:
         """Resubmit the current callable at its current state with the same initial arguments."""
