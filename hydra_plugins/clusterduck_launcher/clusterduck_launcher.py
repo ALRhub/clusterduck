@@ -1,101 +1,41 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
+from __future__ import annotations
+
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
-from multiprocessing import Manager, Pool, current_process, Queue
-from joblib import Parallel, delayed  # type: ignore
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence
 
-from hydra.core.hydra_config import HydraConfig
 from hydra.core.singleton import Singleton
-from hydra.core.utils import JobReturn, filter_overrides, run_job, setup_globals
+from hydra.core.utils import (
+    JobReturn,
+    JobStatus,
+    filter_overrides,
+    run_job,
+    setup_globals,
+)
 from hydra.plugins.launcher import Launcher
 from hydra.types import HydraContext, TaskFunction
 from omegaconf import DictConfig, OmegaConf, open_dict
 
 from .config import BaseQueueConf
 
-log = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    import multiprocessing as mp
+    from multiprocessing.connection import Connection
 
+log = logging.getLogger("clusterduck")
 
-def run_run_job(
-        sweep_config: Dict,
-        alloc_queue: Queue,
-        hydra_context: HydraContext,
-        task_function: TaskFunction,
-        job_dir_key: str,
-) -> JobReturn:
-    import os
-
-    print(current_process().name)
-
-    sweep_config = OmegaConf.create(sweep_config)
-
-    gpu_idx = alloc_queue.get()
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_idx)
-
-    result = None
-    try:
-        result = run_job(
-            hydra_context=hydra_context,
-            task_function=task_function,
-            config=sweep_config,
-            job_dir_key=job_dir_key,
-            job_subdir_key="hydra.sweep.subdir",
-        )
-    except Exception as e:
-        log.error(f"Exception raised while executing job: {e}")
-    finally:
-        alloc_queue.put(gpu_idx)
-
-    return result
-
-def execute_job(
-    idx: int,
-    overrides: Sequence[str],
-    hydra_context: HydraContext,
-    config: DictConfig,
-    task_function: TaskFunction,
-    singleton_state: Dict[Any, Any],
-) -> JobReturn:
-    """Calls `run_job` in parallel"""
-    setup_globals()
-    Singleton.set_state(singleton_state)
-
-    sweep_config = hydra_context.config_loader.load_sweep_config(
-        config, list(overrides)
-    )
-    with open_dict(sweep_config):
-        sweep_config.hydra.job.id = f"{sweep_config.hydra.job.name}_{idx}"
-        sweep_config.hydra.job.num = idx
-    HydraConfig.instance().set_config(sweep_config)
-
-    ret = run_job(
-        hydra_context=hydra_context,
-        config=sweep_config,
-        task_function=task_function,
-        job_dir_key="hydra.sweep.dir",
-        job_subdir_key="hydra.sweep.subdir",
-    )
-
-    return ret
-
-def make_dictconfig_picklable(config: DictConfig, ConfigClass) -> DictConfig:
-    cfg = OmegaConf.merge(
-        OmegaConf.structured(DictConfig),
-        OmegaConf.create(OmegaConf.to_yaml(config, resolve=True))
-    )
-    return cfg
 
 class BaseClusterDuckLauncher(Launcher):
     _EXECUTOR = "abstract"
 
     def __init__(
-            self,
-            num_of_overrides_per_job: int = 1,
-            parallel_executions_in_job: int = 1,
-            exclusive_gpu_per_execution: bool = False,
-            **params: Any
+        self,
+        num_of_overrides_per_job: int,
+        parallel_executions_in_job: int,
+        exclusive_gpu_per_execution: bool,
+        wait_for_completion: bool,
+        **params: Any,
     ) -> None:
         self.params = {}
         for k, v in params.items():
@@ -111,7 +51,7 @@ class BaseClusterDuckLauncher(Launcher):
         self.num_of_overrides_per_job = num_of_overrides_per_job
         self.parallel_executions_in_job = parallel_executions_in_job
         self.exclusive_gpu_per_execution = exclusive_gpu_per_execution
-
+        self.wait_for_completion = wait_for_completion
 
     def setup(
         self,
@@ -124,15 +64,109 @@ class BaseClusterDuckLauncher(Launcher):
         self.hydra_context = hydra_context
         self.task_function = task_function
 
-    def __call__(
+    def process_manager(
         self,
         sweep_overrides_list: List[List[str]],
+        job_dir_key: str,
+        job_nums: range,
+        job_id: str,
+        singleton_state: Dict[type, Singleton],
+    ) -> list[JobReturn]:
+        import multiprocessing as mp
+        import pickle
+        from multiprocessing.connection import wait
+
+        processes: list[mp.Process] = []
+        n_processes = min(self.parallel_executions_in_job, len(sweep_overrides_list))
+        manager_pipes, worker_pipes = zip(*[mp.Pipe() for _ in range(n_processes)])
+        job_nums_iter = iter(job_nums)
+        for i in range(n_processes):
+            # TODO: consider using forkserver context to create processes
+            process = mp.Process(
+                target=self,
+                kwargs=dict(
+                    sweep_overrides=sweep_overrides_list[i],
+                    job_dir_key=job_dir_key,
+                    job_num=next(job_nums_iter),
+                    job_id=job_id,
+                    singleton_state=singleton_state,
+                    pipe=worker_pipes[i],
+                    resources=i,
+                ),
+            )
+            process.start()
+            processes.append(process)
+
+        results: list[JobReturn] = []
+        submitted_overrides = n_processes
+        while submitted_overrides < len(sweep_overrides_list):
+            # wait for next override to finish or fail
+            sentinels = [proc.sentinel for proc in processes]
+            done_processes = wait(sentinels)
+
+            for done_process in done_processes:
+                resource_id = sentinels.index(done_process)
+                processes[resource_id].join()
+
+                if not manager_pipes[resource_id].poll():
+                    raise RuntimeError("Worker process sent no return value.")
+                result = manager_pipes[resource_id].recv()
+
+                results.append(pickle.loads(result))
+                processes[resource_id] = mp.Process(
+                    target=self,
+                    kwargs=dict(
+                        sweep_overrides=sweep_overrides_list[submitted_overrides],
+                        job_dir_key=job_dir_key,
+                        job_num=next(job_nums_iter),
+                        job_id=job_id,
+                        singleton_state=singleton_state,
+                        pipe=worker_pipes[resource_id],
+                        resources=resource_id,
+                    ),
+                )
+                processes[resource_id].start()
+                submitted_overrides += 1
+                if submitted_overrides == len(sweep_overrides_list):
+                    break
+
+        for resource_id, process in enumerate(processes):
+            process.join()
+            if not manager_pipes[resource_id].poll():
+                raise RuntimeError("Worker process sent no return value.")
+            result = manager_pipes[resource_id].recv()
+
+            results.append(pickle.loads(result))
+
+        for manager_pipe, worker_pipe in zip(manager_pipes, worker_pipes):
+            manager_pipe.close()
+            worker_pipe.close()
+
+        exceptions = [
+            result.return_value
+            for result in results
+            if result.status == JobStatus.FAILED
+        ]
+        if exceptions:
+            # TODO: ExceptionGroup exists in Python 3.11 and up
+            raise RuntimeError(
+                f"{len(exceptions)} workers failed due to errors!"
+            ) from exceptions[0]
+
+        return results
+
+    def __call__(
+        self,
+        sweep_overrides: List[str],
         job_dir_key: str,
         job_num: int,
         job_id: str,
         singleton_state: Dict[type, Singleton],
-    ) -> JobReturn:
+        pipe: Connection,
+        resources: int,
+    ) -> None:
         # lazy import to ensure plugin discovery remains fast
+        import cloudpickle
         import submitit
 
         assert self.hydra_context is not None
@@ -141,46 +175,31 @@ class BaseClusterDuckLauncher(Launcher):
 
         Singleton.set_state(singleton_state)
         setup_globals()
-        sweep_configs = []
-        for sweep_overrides in sweep_overrides_list:
-            sweep_config = self.hydra_context.config_loader.load_sweep_config(self.config, sweep_overrides)
-
-            with open_dict(sweep_config.hydra.job) as job:
-                # Populate new job variables
-                job.id = submitit.JobEnvironment().job_id  # type: ignore
-                sweep_config.hydra.job.num = job_num
-
-            sweep_configs.append(OmegaConf.to_container(sweep_config))
-
-
-        # m = Manager()
-        # alloc_queue = m.Queue()
-        # for i in range(self.parallel_executions_in_job):
-        #     alloc_queue.put(i)
-        # with Pool(self.parallel_executions_in_job) as pool:
-        #     a = pool.starmap(run_run_job, [(sweep_config, alloc_queue, self.hydra_context, self.task_function, job_dir_key) for sweep_config in sweep_configs])
-        # return a
-
-        runs = Parallel(
-            n_jobs=self.parallel_executions_in_job,
-            backend="loky",
-            prefer="processes",
-        )(
-        delayed(execute_job)(
-                job_num+idx,
-                overrides,
-                self.hydra_context,
-                sweep_config,
-                self.task_function,
-                singleton_state,
-            )
-            for idx, overrides in enumerate(sweep_configs)
+        sweep_config = self.hydra_context.config_loader.load_sweep_config(
+            self.config, sweep_overrides
         )
 
-        assert isinstance(runs, List)
-        for run in runs:
-            assert isinstance(run, JobReturn)
-        return runs
+        with open_dict(sweep_config.hydra.job) as job:
+            # Populate new job variables
+            job.id = submitit.JobEnvironment().job_id  # type: ignore
+            sweep_config.hydra.job.num = job_num
+
+        # assign resources
+        # TODO: abstract this
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(resources)
+
+        # TODO: separate clusterduck logging (global across overrides) from job logging (override-local)
+        logger = logging.getLogger("clusterduck")
+        logger.info(f"Running job {job_num}")
+        ret = run_job(
+            hydra_context=self.hydra_context,
+            task_function=self.task_function,
+            config=sweep_config,
+            job_dir_key=job_dir_key,
+            job_subdir_key="hydra.sweep.subdir",
+        )
+        logger.info(f"Job {job_num} completed.")
+        pipe.send(cloudpickle.dumps(ret))
 
     def checkpoint(self, *args: Any, **kwargs: Any) -> Any:
         """Resubmit the current callable at its current state with the same initial arguments."""
@@ -193,12 +212,13 @@ class BaseClusterDuckLauncher(Launcher):
         self, job_overrides: Sequence[Sequence[str]], initial_job_idx: int
     ) -> Sequence[JobReturn]:
         # lazy import to ensure plugin discovery remains fast
-        import submitit
         import math
+
+        import submitit
 
         assert self.config is not None
 
-        num_jobs = math.ceil(len(job_overrides)/self.num_of_overrides_per_job)
+        num_jobs = math.ceil(len(job_overrides) / self.num_of_overrides_per_job)
         assert num_jobs > 0
         params = self.params
         # build executor
@@ -225,7 +245,7 @@ class BaseClusterDuckLauncher(Launcher):
         executor.update_parameters(**params)
 
         log.info(
-            f"Submitit '{self._EXECUTOR}' sweep output dir : "
+            f"Clusterduck '{self._EXECUTOR}' sweep output dir : "
             f"{self.config.hydra.sweep.dir}"
         )
         sweep_dir = Path(str(self.config.hydra.sweep.dir))
@@ -236,24 +256,71 @@ class BaseClusterDuckLauncher(Launcher):
 
         job_params: List[Any] = []
         for idx in range(num_jobs):
-            job_overrides_sublist = job_overrides[idx*self.num_of_overrides_per_job:(idx+1)*self.num_of_overrides_per_job]
-            assert len(job_overrides_sublist) > 0 and len(job_overrides_sublist) <= self.num_of_overrides_per_job
+            job_overrides_sublist = job_overrides[
+                idx
+                * self.num_of_overrides_per_job : (idx + 1)
+                * self.num_of_overrides_per_job
+            ]
+            assert (
+                len(job_overrides_sublist) > 0
+                and len(job_overrides_sublist) <= self.num_of_overrides_per_job
+            )
 
-            filtered_job_overrides_sublist = [" ".join(filter_overrides(overrides)) for overrides in job_overrides_sublist]
-            log.info(f"Launching {filtered_job_overrides_sublist} in job with id {initial_job_idx+idx}")
+            filtered_job_overrides_sublist = [
+                " ".join(filter_overrides(overrides))
+                for overrides in job_overrides_sublist
+            ]
+            log.info(f"Launching {filtered_job_overrides_sublist} in job with id {idx}")
 
             job_params.append(
                 (
                     job_overrides_sublist,
-                    "hydra.sweep.dir",
-                    idx+initial_job_idx,
-                    f"job_id_for_{idx+initial_job_idx}",
-                    Singleton.get_state(),
+                    "hydra.sweep.dir",  # job_dir_key
+                    range(  # job_nums
+                        idx * self.num_of_overrides_per_job + initial_job_idx,
+                        (idx + 1) * self.num_of_overrides_per_job + initial_job_idx,
+                    ),
+                    f"job_id_for_{idx}",  # job_id
+                    Singleton.get_state(),  # singleton_state
                 )
             )
 
-        jobs = executor.map_array(self, *zip(*job_params))
-        return [j.results()[0] for j in jobs]
+        # launch all
+        jobs = executor.map_array(self.process_manager, *zip(*job_params))
+
+        if self.wait_for_completion:
+            return [result for j in jobs for result in j.results()[0]]
+        else:
+            # we do our best to emulate what hydra.core.utils.run_job would return by doing most
+            # of what BaseSubmititLauncher.__call__ does but with a no-op task_function
+            assert self.hydra_context is not None
+            assert self.config is not None
+            assert self.task_function is not None
+
+            no_op = lambda config: None
+            job_nums = range(initial_job_idx, initial_job_idx + len(job_overrides))
+            results: list[JobReturn] = []
+            for job_num, override in zip(job_nums, job_overrides):
+                sweep_config = self.hydra_context.config_loader.load_sweep_config(
+                    self.config, override
+                )
+
+                with open_dict(sweep_config.hydra.job) as job:
+                    # Populate new job variables
+                    # Cannot set job ID to slurm job ID as we are not inside slurm job
+                    sweep_config.hydra.job.num = job_num
+
+                result = run_job(
+                    hydra_context=self.hydra_context,
+                    task_function=no_op,
+                    config=sweep_config,
+                    job_dir_key="hydra.sweep.dir",
+                    job_subdir_key="hydra.sweep.subdir",
+                    configure_logging=False,
+                )
+
+                results.append(result)
+            return results
 
 
 class ClusterDuckLocalLauncher(BaseClusterDuckLauncher):

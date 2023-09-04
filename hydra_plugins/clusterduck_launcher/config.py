@@ -32,15 +32,14 @@ class BaseQueueConf:
     num_of_overrides_per_job: int = 1
     parallel_executions_in_job: int = 1
     exclusive_gpu_per_execution: bool = False
+    wait_for_completion: bool = False
 
 
 @dataclass
 class SlurmQueueConf(BaseQueueConf):
     """Slurm configuration overrides and specific parameters"""
 
-    _target_: str = (
-        "hydra_plugins.clusterduck_launcher.clusterduck_launcher.ClusterDuckSlurmLauncher"
-    )
+    _target_: str = "hydra_plugins.clusterduck_launcher.clusterduck_launcher.ClusterDuckSlurmLauncher"
 
     # Params are used to configure sbatch, for more info check:
     # https://github.com/facebookincubator/submitit/blob/main/submitit/slurm/slurm.py
@@ -84,9 +83,7 @@ class SlurmQueueConf(BaseQueueConf):
 
 @dataclass
 class LocalQueueConf(BaseQueueConf):
-    _target_: str = (
-        "hydra_plugins.clusterduck_launcher.clusterduck_launcher.ClusterDuckLocalLauncher"
-    )
+    _target_: str = "hydra_plugins.clusterduck_launcher.clusterduck_launcher.ClusterDuckLocalLauncher"
 
 
 # finally, register two different choices:
