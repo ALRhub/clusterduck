@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence
 
 from hydra.core.singleton import Singleton
 from hydra.core.utils import (
@@ -18,6 +18,10 @@ from hydra.types import HydraContext, TaskFunction
 from omegaconf import DictConfig, OmegaConf, open_dict
 
 from .config import BaseQueueConf
+
+if TYPE_CHECKING:
+    import multiprocessing as mp
+    from multiprocessing.connection import Connection
 
 log = logging.getLogger("clusterduck")
 
@@ -69,9 +73,8 @@ class BaseClusterDuckLauncher(Launcher):
         singleton_state: Dict[type, Singleton],
     ) -> list[JobReturn]:
         import multiprocessing as mp
+        import pickle
         from multiprocessing.connection import wait
-
-        import cloudpickle
 
         processes: list[mp.Process] = []
         n_processes = min(self.parallel_executions_in_job, len(sweep_overrides_list))
@@ -109,7 +112,7 @@ class BaseClusterDuckLauncher(Launcher):
                     raise RuntimeError("Worker process sent no return value.")
                 result = manager_pipes[resource_id].recv()
 
-                results.append(cloudpickle.loads(result))
+                results.append(pickle.loads(result))
                 processes[resource_id] = mp.Process(
                     target=self,
                     kwargs=dict(
@@ -133,7 +136,7 @@ class BaseClusterDuckLauncher(Launcher):
                 raise RuntimeError("Worker process sent no return value.")
             result = manager_pipes[resource_id].recv()
 
-            results.append(cloudpickle.loads(result))
+            results.append(pickle.loads(result))
 
         for manager_pipe, worker_pipe in zip(manager_pipes, worker_pipes):
             manager_pipe.close()
@@ -159,8 +162,8 @@ class BaseClusterDuckLauncher(Launcher):
         job_num: int,
         job_id: str,
         singleton_state: Dict[type, Singleton],
-        pipe: mp.Connection,
-        resources,
+        pipe: Connection,
+        resources: int,
     ) -> None:
         # lazy import to ensure plugin discovery remains fast
         import cloudpickle
