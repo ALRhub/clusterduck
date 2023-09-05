@@ -8,8 +8,8 @@ hydra:
   mode: MULTIRUN
   launcher:
     timeout_min: 1
-    partition: accelerated
-    gres: gpu:4
+    #partition: accelerated
+    #gres: gpu:4
     # additional_parameters:
     #   mail-type: ALL
     #   mail-user: balazs.gyenes@kit.edu
@@ -17,3 +17,11 @@ hydra:
     parallel_executions_in_job: 2
     exclusive_gpu_per_execution: False
     wait_for_completion: True
+    resources_config:
+      n_processes: ${hydra.launcher.parallel_executions_in_job}
+      n_processes_per_resource: 1
+      straggler_resource:
+        min_delay: 0.0
+        max_delay: 10.0
+
+

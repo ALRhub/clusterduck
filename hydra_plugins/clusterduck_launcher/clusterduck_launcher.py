@@ -18,6 +18,7 @@ from hydra.types import HydraContext, TaskFunction
 from omegaconf import DictConfig, OmegaConf, open_dict
 
 from .config import BaseQueueConf
+from .process_manager import ProcessManager
 
 if TYPE_CHECKING:
     import multiprocessing as mp
@@ -33,8 +34,8 @@ class BaseClusterDuckLauncher(Launcher):
         self,
         num_of_overrides_per_job: int,
         parallel_executions_in_job: int,
-        exclusive_gpu_per_execution: bool,
         wait_for_completion: bool,
+        resources_config: DictConfig,
         **params: Any,
     ) -> None:
         self.params = {}
@@ -50,8 +51,8 @@ class BaseClusterDuckLauncher(Launcher):
 
         self.num_of_overrides_per_job = num_of_overrides_per_job
         self.parallel_executions_in_job = parallel_executions_in_job
-        self.exclusive_gpu_per_execution = exclusive_gpu_per_execution
         self.wait_for_completion = wait_for_completion
+        self.resources_config = resources_config
 
     def setup(
         self,
@@ -64,7 +65,7 @@ class BaseClusterDuckLauncher(Launcher):
         self.hydra_context = hydra_context
         self.task_function = task_function
 
-    def process_manager(
+    def process_manager_proxy(
         self,
         sweep_overrides_list: List[List[str]],
         job_dir_key: str,
@@ -72,88 +73,14 @@ class BaseClusterDuckLauncher(Launcher):
         job_id: str,
         singleton_state: Dict[type, Singleton],
     ) -> list[JobReturn]:
-        import multiprocessing as mp
-        import pickle
-        from multiprocessing.connection import wait
-
-        processes: list[mp.Process] = []
-        n_processes = min(self.parallel_executions_in_job, len(sweep_overrides_list))
-        manager_pipes, worker_pipes = zip(*[mp.Pipe() for _ in range(n_processes)])
-        job_nums_iter = iter(job_nums)
-        for i in range(n_processes):
-            # TODO: consider using forkserver context to create processes
-            process = mp.Process(
-                target=self,
-                kwargs=dict(
-                    sweep_overrides=sweep_overrides_list[i],
-                    job_dir_key=job_dir_key,
-                    job_num=next(job_nums_iter),
-                    job_id=job_id,
-                    singleton_state=singleton_state,
-                    pipe=worker_pipes[i],
-                    resources=i,
-                ),
-            )
-            process.start()
-            processes.append(process)
-
-        results: list[JobReturn] = []
-        submitted_overrides = n_processes
-        while submitted_overrides < len(sweep_overrides_list):
-            # wait for next override to finish or fail
-            sentinels = [proc.sentinel for proc in processes]
-            done_processes = wait(sentinels)
-
-            for done_process in done_processes:
-                resource_id = sentinels.index(done_process)
-                processes[resource_id].join()
-
-                if not manager_pipes[resource_id].poll():
-                    raise RuntimeError("Worker process sent no return value.")
-                result = manager_pipes[resource_id].recv()
-
-                results.append(pickle.loads(result))
-                processes[resource_id] = mp.Process(
-                    target=self,
-                    kwargs=dict(
-                        sweep_overrides=sweep_overrides_list[submitted_overrides],
-                        job_dir_key=job_dir_key,
-                        job_num=next(job_nums_iter),
-                        job_id=job_id,
-                        singleton_state=singleton_state,
-                        pipe=worker_pipes[resource_id],
-                        resources=resource_id,
-                    ),
-                )
-                processes[resource_id].start()
-                submitted_overrides += 1
-                if submitted_overrides == len(sweep_overrides_list):
-                    break
-
-        for resource_id, process in enumerate(processes):
-            process.join()
-            if not manager_pipes[resource_id].poll():
-                raise RuntimeError("Worker process sent no return value.")
-            result = manager_pipes[resource_id].recv()
-
-            results.append(pickle.loads(result))
-
-        for manager_pipe, worker_pipe in zip(manager_pipes, worker_pipes):
-            manager_pipe.close()
-            worker_pipe.close()
-
-        exceptions = [
-            result.return_value
-            for result in results
-            if result.status == JobStatus.FAILED
-        ]
-        if exceptions:
-            # TODO: ExceptionGroup exists in Python 3.11 and up
-            raise RuntimeError(
-                f"{len(exceptions)} workers failed due to errors!"
-            ) from exceptions[0]
-
-        return results
+        process_manager = ProcessManager(parallel_executions_in_job=self.parallel_executions_in_job, target_fn=self, resources_config=self.config.hydra.launcher.resources_config)
+        return process_manager.run(
+            sweep_overrides_list,
+            job_dir_key,
+            job_nums,
+            job_id,
+            singleton_state,
+        )
 
     def __call__(
         self,
@@ -163,7 +90,6 @@ class BaseClusterDuckLauncher(Launcher):
         job_id: str,
         singleton_state: Dict[type, Singleton],
         pipe: Connection,
-        resources: int,
     ) -> None:
         # lazy import to ensure plugin discovery remains fast
         import cloudpickle
@@ -184,9 +110,6 @@ class BaseClusterDuckLauncher(Launcher):
             job.id = submitit.JobEnvironment().job_id  # type: ignore
             sweep_config.hydra.job.num = job_num
 
-        # assign resources
-        # TODO: abstract this
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(resources)
 
         # TODO: separate clusterduck logging (global across overrides) from job logging (override-local)
         logger = logging.getLogger("clusterduck")
@@ -286,7 +209,7 @@ class BaseClusterDuckLauncher(Launcher):
             )
 
         # launch all
-        jobs = executor.map_array(self.process_manager, *zip(*job_params))
+        jobs = executor.map_array(self.process_manager_proxy, *zip(*job_params))
 
         if self.wait_for_completion:
             return [result for j in jobs for result in j.results()[0]]

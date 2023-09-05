@@ -19,6 +19,7 @@ def my_app(cfg: DictConfig) -> None:
     log.info(f"Waiting {duration} seconds...")
     time.sleep(duration)
     log.info("Job finished!")
+    return "apple"
 
 
 if __name__ == "__main__":

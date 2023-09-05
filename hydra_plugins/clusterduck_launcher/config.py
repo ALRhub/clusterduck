@@ -34,6 +34,8 @@ class BaseQueueConf:
     exclusive_gpu_per_execution: bool = False
     wait_for_completion: bool = False
 
+    resources_config: Dict[str, Any] = field(default_factory=dict)
+
 
 @dataclass
 class SlurmQueueConf(BaseQueueConf):
