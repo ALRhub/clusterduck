@@ -19,12 +19,15 @@ class ProcessManager:
         self.resource_manager = ResourceManager(resources_config)
 
 
-    def target_fn_proxy(self, resources, **kwargs):
+    def target_fn_proxy(self, resources, singleton_state, **kwargs):
+        import cloudpickle
+        singleton_state = cloudpickle.loads(singleton_state)
+
         try:
             print(kwargs.keys(), flush=True)
             for resource in resources.values():
                 resource.apply()
-            return self.target_fn(**kwargs)
+            return self.target_fn(singleton_state=singleton_state, **kwargs)
         except Exception as e:
             import traceback
             traceback.print_exc()
@@ -41,6 +44,10 @@ class ProcessManager:
         import multiprocessing as mp
         import pickle
         from multiprocessing.connection import wait
+        import cloudpickle
+
+
+        mp.set_start_method('spawn')
 
         processes: list[mp.Process] = []
         n_processes = min(self.parallel_executions_in_job, len(sweep_overrides_list))
@@ -55,7 +62,7 @@ class ProcessManager:
                     job_dir_key=job_dir_key,
                     job_num=next(job_nums_iter),
                     job_id=job_id,
-                    singleton_state=singleton_state,
+                    singleton_state=cloudpickle.dumps(singleton_state),
                     pipe=worker_pipes[i],
                     resources=self.resource_manager.get_resource(i),
                 ),
@@ -86,7 +93,7 @@ class ProcessManager:
                         job_dir_key=job_dir_key,
                         job_num=next(job_nums_iter),
                         job_id=job_id,
-                        singleton_state=singleton_state,
+                        singleton_state=cloudpickle.dumps(singleton_state),
                         pipe=worker_pipes[resource_id],
                         resources=self.resource_manager.get_resource(resource_id),
                     ),

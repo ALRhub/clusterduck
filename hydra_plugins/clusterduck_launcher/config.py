@@ -31,7 +31,6 @@ class BaseQueueConf:
     # Following parameters are clusterduck specific
     num_of_overrides_per_job: int = 1
     parallel_executions_in_job: int = 1
-    exclusive_gpu_per_execution: bool = False
     wait_for_completion: bool = False
 
     resources_config: Dict[str, Any] = field(default_factory=dict)
@@ -85,7 +84,6 @@ class SlurmQueueConf(BaseQueueConf):
     # Following parameters are clusterduck specific
     num_of_overrides_per_job: int = 1
     parallel_executions_in_job: int = 1
-    exclusive_gpu_per_execution: bool = False
     wait_for_completion: bool = False
 
     resources_config: Dict[str, Any] = field(default_factory=dict)

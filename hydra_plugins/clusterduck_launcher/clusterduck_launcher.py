@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence
 
+import cloudpickle
 from hydra.core.singleton import Singleton
 from hydra.core.utils import (
     JobReturn,
@@ -62,8 +63,8 @@ class BaseClusterDuckLauncher(Launcher):
         config: DictConfig,
     ) -> None:
         self.config = config
-        self.hydra_context = hydra_context
-        self.task_function = task_function
+        self.hydra_context = cloudpickle.dumps(hydra_context)
+        self.task_function = cloudpickle.dumps(task_function)
 
     def process_manager_proxy(
         self,
@@ -98,6 +99,9 @@ class BaseClusterDuckLauncher(Launcher):
         assert self.hydra_context is not None
         assert self.config is not None
         assert self.task_function is not None
+
+        self.hydra_context = cloudpickle.loads(self.hydra_context)
+        self.task_function = cloudpickle.loads(self.task_function)
 
         Singleton.set_state(singleton_state)
         setup_globals()
@@ -219,6 +223,9 @@ class BaseClusterDuckLauncher(Launcher):
             assert self.hydra_context is not None
             assert self.config is not None
             assert self.task_function is not None
+
+            self.hydra_context = cloudpickle.loads(self.hydra_context)
+            self.task_function = cloudpickle.loads(self.task_function)
 
             no_op = lambda config: None
             job_nums = range(initial_job_idx, initial_job_idx + len(job_overrides))
