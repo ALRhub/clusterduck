@@ -33,7 +33,7 @@ class BaseQueueConf:
     parallel_executions_in_job: int = 1
     wait_for_completion: bool = False
 
-    resources_config: Dict[str, Any] = field(default_factory=dict)
+    resources_config: list = field(default_factory=list)
 
 
 @dataclass
@@ -87,7 +87,6 @@ class SlurmQueueConf(BaseQueueConf):
     wait_for_completion: bool = False
 
     resources_config: Dict[str, Any] = field(default_factory=dict)
-
 
 
 @dataclass

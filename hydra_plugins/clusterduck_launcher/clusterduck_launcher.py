@@ -3,9 +3,8 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
-import cloudpickle
 from hydra.core.singleton import Singleton
 from hydra.core.utils import (
     JobReturn,
@@ -16,14 +15,9 @@ from hydra.core.utils import (
 )
 from hydra.plugins.launcher import Launcher
 from hydra.types import HydraContext, TaskFunction
-from omegaconf import DictConfig, OmegaConf, open_dict
+from omegaconf import DictConfig, ListConfig, OmegaConf, open_dict
 
 from .config import BaseQueueConf
-from .process_manager import ProcessManager
-
-if TYPE_CHECKING:
-    import multiprocessing as mp
-    from multiprocessing.connection import Connection
 
 log = logging.getLogger("clusterduck")
 
@@ -36,7 +30,7 @@ class BaseClusterDuckLauncher(Launcher):
         num_of_overrides_per_job: int,
         parallel_executions_in_job: int,
         wait_for_completion: bool,
-        resources_config: DictConfig,
+        resources_config: ListConfig,
         **params: Any,
     ) -> None:
         self.params = {}
@@ -51,7 +45,7 @@ class BaseClusterDuckLauncher(Launcher):
         self.hydra_context: Optional[HydraContext] = None
 
         self.num_of_overrides_per_job = num_of_overrides_per_job
-        self.parallel_executions_in_job = parallel_executions_in_job
+        self.n_workers = parallel_executions_in_job
         self.wait_for_completion = wait_for_completion
         self.resources_config = resources_config
 
@@ -63,10 +57,10 @@ class BaseClusterDuckLauncher(Launcher):
         config: DictConfig,
     ) -> None:
         self.config = config
-        self.hydra_context = cloudpickle.dumps(hydra_context)
-        self.task_function = cloudpickle.dumps(task_function)
+        self.hydra_context = hydra_context
+        self.task_function = task_function
 
-    def process_manager_proxy(
+    def run_workers(
         self,
         sweep_overrides_list: List[List[str]],
         job_dir_key: str,
@@ -74,14 +68,57 @@ class BaseClusterDuckLauncher(Launcher):
         job_id: str,
         singleton_state: Dict[type, Singleton],
     ) -> list[JobReturn]:
-        process_manager = ProcessManager(parallel_executions_in_job=self.parallel_executions_in_job, target_fn=self, resources_config=self.config.hydra.launcher.resources_config)
-        return process_manager.run(
-            sweep_overrides_list,
-            job_dir_key,
-            job_nums,
-            job_id,
-            singleton_state,
+        from ._process_manager import WorkerPool
+        from ._resources import ResourcePool
+
+        kwargs_list = [
+            dict(
+                sweep_overrides=sweep_overrides,
+                job_dir_key=job_dir_key,
+                job_num=job_num,
+                job_id=job_id,
+                singleton_state=singleton_state,
+            )
+            for sweep_overrides, job_num in zip(sweep_overrides_list, job_nums)
+        ]
+
+        resource_pools = []
+        for resource in self.resources_config:
+            if isinstance(resource, str):
+                resource_pools.append(
+                    ResourcePool(kind=resource, n_workers=self.n_workers)
+                )
+            elif isinstance(resource, DictConfig):
+                items = list(resource.items())
+                assert len(items) == 1
+                kind, kwargs = items[0]
+                resource_pools.append(
+                    ResourcePool(kind=kind, n_workers=self.n_workers, **kwargs)
+                )
+            else:
+                raise ValueError(f"Unexpected resource configuration {resource}")
+
+        process_manager = WorkerPool(
+            n_workers=self.n_workers,
+            resource_pools=resource_pools,
         )
+        results = process_manager.execute(
+            target=self,
+            kwargs_list=kwargs_list,
+        )
+
+        exceptions = [
+            result.return_value
+            for result in results
+            if result.status == JobStatus.FAILED
+        ]
+        if exceptions:
+            # TODO: ExceptionGroup exists in Python 3.11 and up
+            raise RuntimeError(
+                f"{len(exceptions)} workers failed due to errors!"
+            ) from exceptions[0]
+
+        return results
 
     def __call__(
         self,
@@ -90,18 +127,13 @@ class BaseClusterDuckLauncher(Launcher):
         job_num: int,
         job_id: str,
         singleton_state: Dict[type, Singleton],
-        pipe: Connection,
-    ) -> None:
+    ) -> JobReturn:
         # lazy import to ensure plugin discovery remains fast
-        import cloudpickle
         import submitit
 
         assert self.hydra_context is not None
         assert self.config is not None
         assert self.task_function is not None
-
-        self.hydra_context = cloudpickle.loads(self.hydra_context)
-        self.task_function = cloudpickle.loads(self.task_function)
 
         Singleton.set_state(singleton_state)
         setup_globals()
@@ -114,7 +146,6 @@ class BaseClusterDuckLauncher(Launcher):
             job.id = submitit.JobEnvironment().job_id  # type: ignore
             sweep_config.hydra.job.num = job_num
 
-
         # TODO: separate clusterduck logging (global across overrides) from job logging (override-local)
         logger = logging.getLogger("clusterduck")
         logger.info(f"Running job {job_num}")
@@ -126,7 +157,7 @@ class BaseClusterDuckLauncher(Launcher):
             job_subdir_key="hydra.sweep.subdir",
         )
         logger.info(f"Job {job_num} completed.")
-        pipe.send(cloudpickle.dumps(ret))
+        return ret
 
     def checkpoint(self, *args: Any, **kwargs: Any) -> Any:
         """Resubmit the current callable at its current state with the same initial arguments."""
@@ -140,6 +171,7 @@ class BaseClusterDuckLauncher(Launcher):
     ) -> Sequence[JobReturn]:
         # lazy import to ensure plugin discovery remains fast
         import math
+        import pickle
 
         import submitit
 
@@ -213,7 +245,7 @@ class BaseClusterDuckLauncher(Launcher):
             )
 
         # launch all
-        jobs = executor.map_array(self.process_manager_proxy, *zip(*job_params))
+        jobs = executor.map_array(self.run_workers, *zip(*job_params))
 
         if self.wait_for_completion:
             return [result for j in jobs for result in j.results()[0]]
@@ -224,8 +256,8 @@ class BaseClusterDuckLauncher(Launcher):
             assert self.config is not None
             assert self.task_function is not None
 
-            self.hydra_context = cloudpickle.loads(self.hydra_context)
-            self.task_function = cloudpickle.loads(self.task_function)
+            self.hydra_context = pickle.loads(self.hydra_context)
+            self.task_function = pickle.loads(self.task_function)
 
             no_op = lambda config: None
             job_nums = range(initial_job_idx, initial_job_idx + len(job_overrides))
