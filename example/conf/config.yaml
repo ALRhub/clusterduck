@@ -1,20 +1,6 @@
 defaults:
-  - db: mysql
-  - override hydra/launcher: clusterduck_slurm
+  - model: convnet
   - _self_
 
-
-hydra:
-  mode: MULTIRUN
-  launcher:
-    timeout_min: 5
-    partition: dev_accelerated
-    gres: gpu:4
-    num_of_overrides_per_job: 4
-    parallel_executions_in_job: 2
-    wait_for_completion: True
-    resources_config:
-      - cpu
-      - cuda
-      - stagger:
-          delay: 5
+model:
+  learning_rate: 2.0e-5

@@ -1,0 +1,13 @@
+# @package _global_
+
+defaults:
+  - override /hydra/launcher: clusterduck_local
+  - _self_
+
+hydra:
+  mode: MULTIRUN  # needed for launcher to be used
+  launcher:
+    timeout_min: 5
+    num_of_overrides_per_job: 4
+    parallel_executions_in_job: 1
+    wait_for_completion: True

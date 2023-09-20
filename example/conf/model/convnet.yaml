@@ -1,0 +1,4 @@
+channels: [4, 8, 16]
+kernel_sizes: [3, 5, 5]
+strides: [1, 2, 3]
+learning_rate: 1.0e-5

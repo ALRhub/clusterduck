@@ -1,0 +1,4 @@
+d_model: 512
+num_encoder_layers: 6
+num_decoder_layers: 6
+learning_rate: 2.0e-6
