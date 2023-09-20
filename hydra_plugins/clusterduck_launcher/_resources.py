@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 import os
 import time
 from typing import Sequence
 
 import numpy as np
 import psutil
+
+logger = logging.getLogger(__name__)
 
 
 class Resource:
@@ -36,6 +39,7 @@ class CUDAResource(Resource):
         self.cuda_devices = cuda_devices
 
     def apply(self):
+        logger.debug(f"Setting CUDA devices to {self.cuda_devices}")
         os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, self.cuda_devices))
 
 
@@ -48,6 +52,7 @@ class CUDAResourcePool(ResourcePool, kind="cuda"):
     ) -> None:
         if gpus is None:
             gpus = self.get_available_gpus()
+            logger.info(f"Auto-detected the following CUDA devices: {gpus}")
 
         n_gpus = len(gpus)
 
@@ -108,6 +113,7 @@ class CPUResource(Resource):
         self.cpus = list(cpus)
 
     def apply(self):
+        logger.debug(f"Setting CPU affinity to {self.cpus}")
         psutil.Process().cpu_affinity(self.cpus)
 
 
@@ -120,6 +126,7 @@ class CPUResourcePool(ResourcePool, kind="cpu"):
     ) -> None:
         if cpus is None:
             cpus = self.get_available_cpus()
+            logger.info(f"Auto-detected the following CPUs: {cpus}")
 
         n_cpus = len(cpus)
 
@@ -157,12 +164,18 @@ class StaggeredStart(Resource):
         self.delay = delay
 
     def apply(self):
-        time.sleep(self.delay)
+        if self.delay > 0:
+            logger.debug(f"Sleeping for {self.delay} to stagger job start.")
+            time.sleep(self.delay)
 
 
 class StaggeredStarts(ResourcePool, kind="stagger"):
     def __init__(self, kind: str, n_workers: int, delay: float) -> None:
-        self.delays = [delay * i for i in range(n_workers)]
+        delays = [delay * i for i in range(n_workers)]
+        self.delays = [StaggeredStart(delay=delay) for delay in delays]
 
     def get(self, index: int) -> Resource:
-        return StaggeredStart(delay=self.delays[index])
+        delay = self.delays[index]
+        # delays should only be applied on each worker once
+        self.delays[index] = StaggeredStart(delay=0)
+        return delay

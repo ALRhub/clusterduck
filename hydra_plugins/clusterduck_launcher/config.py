@@ -28,13 +28,6 @@ class BaseQueueConf:
     # redirect stderr to stdout
     stderr_to_stdout: bool = False
 
-    # Following parameters are clusterduck specific
-    num_of_overrides_per_job: int = 1
-    parallel_executions_in_job: int = 1
-    wait_for_completion: bool = False
-
-    resources_config: list = field(default_factory=list)
-
 
 @dataclass
 class SlurmQueueConf(BaseQueueConf):
@@ -84,9 +77,9 @@ class SlurmQueueConf(BaseQueueConf):
     # Following parameters are clusterduck specific
     num_of_overrides_per_job: int = 1
     parallel_executions_in_job: int = 1
-    wait_for_completion: bool = False
+    wait_for_completion: bool = True
 
-    resources_config: Dict[str, Any] = field(default_factory=dict)
+    resources_config: list = field(default_factory=list)
 
 
 @dataclass

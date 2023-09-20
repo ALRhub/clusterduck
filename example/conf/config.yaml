@@ -7,8 +7,8 @@ defaults:
 hydra:
   mode: MULTIRUN
   launcher:
-    timeout_min: 30
-    partition: accelerated
+    timeout_min: 5
+    partition: dev_accelerated
     gres: gpu:4
     additional_parameters:
       mail-type: ALL
@@ -21,4 +21,4 @@ hydra:
       - cpu
       - cuda
       - stagger:
-          delay: 10
+          delay: 5
