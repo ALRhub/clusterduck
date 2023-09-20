@@ -68,8 +68,8 @@ class BaseClusterDuckLauncher(Launcher):
         job_id: str,
         singleton_state: Dict[type, Singleton],
     ) -> list[JobReturn]:
-        from ._process_manager import WorkerPool
         from ._resources import ResourcePool
+        from ._worker_pool import WorkerPool
 
         kwargs_list = [
             dict(
@@ -171,7 +171,6 @@ class BaseClusterDuckLauncher(Launcher):
     ) -> Sequence[JobReturn]:
         # lazy import to ensure plugin discovery remains fast
         import math
-        import pickle
 
         import submitit
 
@@ -255,9 +254,6 @@ class BaseClusterDuckLauncher(Launcher):
             assert self.hydra_context is not None
             assert self.config is not None
             assert self.task_function is not None
-
-            self.hydra_context = pickle.loads(self.hydra_context)
-            self.task_function = pickle.loads(self.task_function)
 
             no_op = lambda config: None
             job_nums = range(initial_job_idx, initial_job_idx + len(job_overrides))
