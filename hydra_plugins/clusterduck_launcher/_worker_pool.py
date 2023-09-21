@@ -1,7 +1,7 @@
 import multiprocessing as mp
 import pickle
 from multiprocessing.connection import Connection, wait
-from typing import Any, Callable, Mapping, Sequence, TypeVar
+from typing import Any, Callable, Literal, Mapping, Sequence, TypeVar
 
 import cloudpickle
 
@@ -15,9 +15,11 @@ class WorkerPool:
         self,
         n_workers: int,
         resource_pools: Sequence[ResourcePool],
+        start_method: Literal["fork", "spawn", "forkserver"] = "fork",
     ) -> None:
         self.n_workers = n_workers
         self.resource_pools = resource_pools
+        self.start_method = start_method
 
     def worker(
         self,
@@ -44,8 +46,7 @@ class WorkerPool:
         target: Callable[..., ReturnType],
         kwargs_list: Sequence[dict],
     ) -> list[ReturnType]:
-        # if not using fork, all hydra objects need to be serialized with cloudpickle
-        ctx = mp.get_context("fork")
+        ctx = mp.get_context(self.start_method)
         processes: list[mp.Process] = []
         n_processes = min(self.n_workers, len(kwargs_list))
         manager_pipes, worker_pipes = zip(*[ctx.Pipe() for _ in range(n_processes)])

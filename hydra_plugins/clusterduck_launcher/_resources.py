@@ -79,6 +79,9 @@ class CUDAResourcePool(ResourcePool, kind="cuda"):
 
     @staticmethod
     def get_available_gpus() -> list[int]:
+        # unset any masking of CUDA devices
+        os.environ.pop("CUDA_VISIBLE_DEVICES", None)
+
         try:
             import torch
 

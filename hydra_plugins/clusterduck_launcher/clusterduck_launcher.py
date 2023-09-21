@@ -101,6 +101,8 @@ class BaseClusterDuckLauncher(Launcher):
         process_manager = WorkerPool(
             n_workers=self.n_workers,
             resource_pools=resource_pools,
+            # if not using fork, all hydra objects need to be serialized with cloudpickle
+            start_method="fork",
         )
         results = process_manager.execute(
             target=self,

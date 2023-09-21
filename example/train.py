@@ -8,11 +8,11 @@ import psutil
 import torch
 from omegaconf import DictConfig, OmegaConf
 
-logger = logging.getLogger("my_app")
+logger = logging.getLogger("training")
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")
-def my_app(cfg: DictConfig) -> None:
+def train(cfg: DictConfig) -> None:
     logger.info(
         f"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', '(ALL)')}"
     )
@@ -21,8 +21,7 @@ def my_app(cfg: DictConfig) -> None:
 
     logger.info(f"Job config:\n{OmegaConf.to_yaml(cfg)}")
 
-    rng = np.random.default_rng()
-    duration = rng.integers(10)
+    duration = np.random.default_rng().integers(10)
     logger.info(f"Waiting {duration} seconds...")
     time.sleep(duration)
 
@@ -30,4 +29,4 @@ def my_app(cfg: DictConfig) -> None:
 
 
 if __name__ == "__main__":
-    my_app()
+    train()
