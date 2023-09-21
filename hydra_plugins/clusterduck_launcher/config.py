@@ -17,8 +17,6 @@ class BaseQueueConf:
     cpus_per_task: Optional[int] = None
     # number of gpus to use on each node
     gpus_per_node: Optional[int] = None
-    # number of tasks to spawn on each node
-    tasks_per_node: int = 1
     # memory to reserve for the job on each node (in GB)
     mem_gb: Optional[int] = None
     # number of nodes to use for the job
@@ -29,19 +27,22 @@ class BaseQueueConf:
     stderr_to_stdout: bool = False
 
     # Following parameters are clusterduck specific
-    # Number of overrides (hydra jobs) to run in each slurm job
-    num_of_overrides_per_job: int = 1
-    # Number of overrides (hydra jobs) to run in parallel in a slurm job
-    parallel_executions_in_job: int = 1
-    # Whether to wait until slurm jobs finish before exiting Python script
-    wait_for_completion: bool = True
-    # A list of resources that should be divided up among parallel executions
-    # e.g. [cuda, cpu]
+    # number of tasks (i.e. hydra jobs) to spawn in parallel on each node
+    # this is also used to set the "tasks_per_node" setting in slurm
+    parallel_tasks_per_node: int = 1
+    # number of tasks (i.e. hydra jobs) to complete in total in each slurm job
+    # leave None to execute all overrides in a single slurm job
+    total_tasks_per_node: Optional[int] = None
+    # wait until slurm jobs finish before exiting Python script
+    wait_for_completion: bool = False
+    # resources that should be divided up among parallel task executions
+    # e.g. resources_config: [cuda, cpu]
     # additional configuration for resources should be included as a DictConfig
     # beneath the resource name
     # e.g.
-    # - stagger:
-    #     delay: 10
+    # resources_config:
+    #   - stagger:
+    #       delay: 10
     resources_config: list = field(default_factory=list)
 
 

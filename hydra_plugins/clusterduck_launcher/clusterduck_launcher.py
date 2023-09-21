@@ -27,12 +27,20 @@ class BaseClusterDuckLauncher(Launcher):
 
     def __init__(
         self,
-        num_of_overrides_per_job: int,
-        parallel_executions_in_job: int,
+        parallel_tasks_per_node: int,
+        total_tasks_per_node: int | None,
         wait_for_completion: bool,
         resources_config: ListConfig,
         **params: Any,
     ) -> None:
+        self.n_workers = parallel_tasks_per_node
+        self.total_tasks_per_node = total_tasks_per_node
+        self.wait_for_completion = wait_for_completion
+        self.resources_config = resources_config
+
+        # parameters used by submitit
+        # slurm uses "tasks_per_node" for parallelism within a node
+        params |= {"tasks_per_node": parallel_tasks_per_node}
         self.params = {}
         for k, v in params.items():
             if OmegaConf.is_config(v):
@@ -43,11 +51,6 @@ class BaseClusterDuckLauncher(Launcher):
         self.task_function: Optional[TaskFunction] = None
         self.sweep_configs: Optional[TaskFunction] = None
         self.hydra_context: Optional[HydraContext] = None
-
-        self.num_of_overrides_per_job = num_of_overrides_per_job
-        self.n_workers = parallel_executions_in_job
-        self.wait_for_completion = wait_for_completion
-        self.resources_config = resources_config
 
     def setup(
         self,
@@ -178,7 +181,9 @@ class BaseClusterDuckLauncher(Launcher):
 
         assert self.config is not None
 
-        num_jobs = math.ceil(len(job_overrides) / self.num_of_overrides_per_job)
+        total_tasks_per_node = self.total_tasks_per_node or len(job_overrides)
+
+        num_jobs = math.ceil(len(job_overrides) / total_tasks_per_node)
         assert num_jobs > 0
         params = self.params
         # build executor
@@ -217,13 +222,11 @@ class BaseClusterDuckLauncher(Launcher):
         job_params: List[Any] = []
         for idx in range(num_jobs):
             job_overrides_sublist = job_overrides[
-                idx
-                * self.num_of_overrides_per_job : (idx + 1)
-                * self.num_of_overrides_per_job
+                idx * total_tasks_per_node : (idx + 1) * total_tasks_per_node
             ]
             assert (
                 len(job_overrides_sublist) > 0
-                and len(job_overrides_sublist) <= self.num_of_overrides_per_job
+                and len(job_overrides_sublist) <= total_tasks_per_node
             )
 
             filtered_job_overrides_sublist = [
@@ -237,8 +240,8 @@ class BaseClusterDuckLauncher(Launcher):
                     job_overrides_sublist,
                     "hydra.sweep.dir",  # job_dir_key
                     range(  # job_nums
-                        idx * self.num_of_overrides_per_job + initial_job_idx,
-                        (idx + 1) * self.num_of_overrides_per_job + initial_job_idx,
+                        idx * total_tasks_per_node + initial_job_idx,
+                        (idx + 1) * total_tasks_per_node + initial_job_idx,
                     ),
                     f"job_id_for_{idx}",  # job_id
                     Singleton.get_state(),  # singleton_state

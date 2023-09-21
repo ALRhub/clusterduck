@@ -8,7 +8,6 @@ hydra:
   mode: MULTIRUN  # needed for launcher to be used
   launcher:
     timeout_min: 5
-    num_of_overrides_per_job: 4
-    parallel_executions_in_job: 1
+    parallel_tasks_per_node: 1
     wait_for_completion: True
     gpus_per_node: 1  # by default, submitit local executor uses 0 gpus
