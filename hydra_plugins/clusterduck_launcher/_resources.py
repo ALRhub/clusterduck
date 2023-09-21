@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from dataclasses import dataclass
 from typing import Sequence
 
 import numpy as np
@@ -34,9 +35,9 @@ class ResourcePool:
         raise NotImplementedError
 
 
+@dataclass
 class CUDAResource(Resource):
-    def __init__(self, cuda_devices: Sequence[int]):
-        self.cuda_devices = cuda_devices
+    cuda_devices: list[int]
 
     def apply(self):
         logger.debug(f"Setting CUDA devices to {self.cuda_devices}")
@@ -66,9 +67,9 @@ class CUDAResourcePool(ResourcePool, kind="cuda"):
                 raise ValueError(
                     f"The number of workers ({n_workers}) must evenly divide the number of GPUs ({n_gpus})."
                 )
+
         workers_per_gpu = max(1, n_workers // n_gpus)
         gpus_per_worker = max(1, n_gpus // n_workers)
-
         gpu_groups: list[list[int]] = (
             np.array(gpus).repeat(workers_per_gpu).reshape(-1, gpus_per_worker).tolist()
         )
@@ -111,9 +112,9 @@ class CUDAResourcePool(ResourcePool, kind="cuda"):
         )
 
 
+@dataclass
 class CPUResource(Resource):
-    def __init__(self, cpus: Sequence[int]):
-        self.cpus = list(cpus)
+    cpus: list[int]
 
     def apply(self):
         logger.debug(f"Setting CPU affinity to {self.cpus}")
@@ -162,9 +163,9 @@ class CPUResourcePool(ResourcePool, kind="cpu"):
         return cpus
 
 
+@dataclass
 class StaggeredStart(Resource):
-    def __init__(self, delay):
-        self.delay = delay
+    delay: float
 
     def apply(self):
         if self.delay > 0:
