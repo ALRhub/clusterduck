@@ -57,9 +57,11 @@ class BaseClusterDuckLauncher(Launcher):
         task_function: TaskFunction,
         config: DictConfig,
     ) -> None:
+        import cloudpickle
+
         self.config = config
         self.hydra_context = hydra_context
-        self.task_function = task_function
+        self.task_function = cloudpickle.dumps(task_function)
 
     def run_workers(
         self,
@@ -132,11 +134,15 @@ class BaseClusterDuckLauncher(Launcher):
         singleton_state: Dict[type, Singleton],
     ) -> JobReturn:
         # lazy import to ensure plugin discovery remains fast
+        import pickle
+
         import submitit
 
         assert self.hydra_context is not None
         assert self.config is not None
         assert self.task_function is not None
+
+        task_function = pickle.loads(self.task_function)
 
         Singleton.set_state(singleton_state)
         setup_globals()
@@ -154,7 +160,7 @@ class BaseClusterDuckLauncher(Launcher):
         logger.info(f"Running job {job_num}")
         ret = run_job(
             hydra_context=self.hydra_context,
-            task_function=self.task_function,
+            task_function=task_function,
             config=sweep_config,
             job_dir_key=job_dir_key,
             job_subdir_key="hydra.sweep.subdir",
