@@ -1,0 +1,13 @@
+# @package _global_
+
+defaults:
+  - override /hydra/launcher: clusterduck_local
+  - _self_
+
+hydra:
+  mode: MULTIRUN  # needed for launcher to be used
+  launcher:
+    timeout_min: 5
+    parallel_runs_per_node: 1
+    wait_for_completion: True
+    gpus_per_node: 1  # by default, submitit local executor uses 0 gpus

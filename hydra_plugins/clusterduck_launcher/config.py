@@ -29,11 +29,22 @@ class BaseQueueConf:
     stderr_to_stdout: bool = False
 
     # Following parameters are clusterduck specific
-    num_of_overrides_per_job: int = 1
-    parallel_executions_in_job: int = 1
+    # number of tasks (i.e. hydra jobs) to spawn in parallel on each node
+    parallel_runs_per_node: int = 1
+    # number of tasks (i.e. hydra jobs) to complete in total in each slurm job
+    # leave None to execute all overrides in a single slurm job
+    total_tasks_per_node: Optional[int] = None
+    # wait until slurm jobs finish before exiting Python script
     wait_for_completion: bool = False
-
-    resources_config: Dict[str, Any] = field(default_factory=dict)
+    # resources that should be divided up among parallel task executions
+    # e.g. resources_config: [cuda, cpu]
+    # additional configuration for resources should be included as a DictConfig
+    # beneath the resource name
+    # e.g.
+    # resources_config:
+    #   - stagger:
+    #       delay: 10
+    resources_config: list = field(default_factory=list)
 
 
 @dataclass
@@ -80,14 +91,6 @@ class SlurmQueueConf(BaseQueueConf):
     setup: Optional[List[str]] = None
     # Any additional arguments that should be passed to srun
     srun_args: Optional[List[str]] = None
-
-    # Following parameters are clusterduck specific
-    num_of_overrides_per_job: int = 1
-    parallel_executions_in_job: int = 1
-    wait_for_completion: bool = False
-
-    resources_config: Dict[str, Any] = field(default_factory=dict)
-
 
 
 @dataclass

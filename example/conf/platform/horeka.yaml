@@ -1,0 +1,20 @@
+# @package _global_
+
+defaults:
+  - override /hydra/launcher: clusterduck_slurm
+  - _self_
+
+hydra:
+  mode: MULTIRUN  # needed for launcher to be used
+  launcher:
+    timeout_min: 5
+    parallel_runs_per_node: 2
+    wait_for_completion: False
+    partition: dev_accelerated
+    gres: gpu:4
+    resources_config:
+      - cpu
+      - cuda:
+          gpus: [0, 1, 2, 3]
+      - stagger:
+          delay: 5
