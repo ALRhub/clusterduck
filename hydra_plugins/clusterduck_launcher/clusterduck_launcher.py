@@ -46,7 +46,7 @@ class BaseClusterDuckLauncher(Launcher):
             self.params[k] = v
 
         self.config: Optional[DictConfig] = None
-        self.task_function: Optional[TaskFunction] = None
+        self.task_function: Optional[bytes] = None
         self.sweep_configs: Optional[TaskFunction] = None
         self.hydra_context: Optional[HydraContext] = None
 
