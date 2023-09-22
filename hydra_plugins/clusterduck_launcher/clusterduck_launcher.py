@@ -27,20 +27,18 @@ class BaseClusterDuckLauncher(Launcher):
 
     def __init__(
         self,
-        parallel_tasks_per_node: int,
+        parallel_runs_per_node: int,
         total_tasks_per_node: int | None,
         wait_for_completion: bool,
         resources_config: ListConfig,
         **params: Any,
     ) -> None:
-        self.n_workers = parallel_tasks_per_node
+        self.n_workers = parallel_runs_per_node
         self.total_tasks_per_node = total_tasks_per_node
         self.wait_for_completion = wait_for_completion
         self.resources_config = resources_config
 
         # parameters used by submitit
-        # slurm uses "tasks_per_node" for parallelism within a node
-        params |= {"tasks_per_node": parallel_tasks_per_node}
         self.params = {}
         for k, v in params.items():
             if OmegaConf.is_config(v):

@@ -8,7 +8,7 @@ hydra:
   mode: MULTIRUN  # needed for launcher to be used
   launcher:
     timeout_min: 5
-    parallel_tasks_per_node: 4
+    parallel_runs_per_node: 4
     wait_for_completion: False
     name: ${hydra.job.name}  # this will be the experiment's name in slurm
     partition: gpu  # there is only one partition "gpu"
