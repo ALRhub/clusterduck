@@ -28,13 +28,13 @@ class BaseClusterDuckLauncher(Launcher):
     def __init__(
         self,
         parallel_runs_per_node: int,
-        total_tasks_per_node: int | None,
+        total_runs_per_node: int | None,
         wait_for_completion: bool,
         resources_config: ListConfig,
         **params: Any,
     ) -> None:
         self.n_workers = parallel_runs_per_node
-        self.total_tasks_per_node = total_tasks_per_node
+        self.total_runs_per_node = total_runs_per_node
         self.wait_for_completion = wait_for_completion
         self.resources_config = resources_config
 
@@ -185,9 +185,9 @@ class BaseClusterDuckLauncher(Launcher):
 
         assert self.config is not None
 
-        total_tasks_per_node = self.total_tasks_per_node or len(job_overrides)
+        total_runs_per_node = self.total_runs_per_node or len(job_overrides)
 
-        num_jobs = math.ceil(len(job_overrides) / total_tasks_per_node)
+        num_jobs = math.ceil(len(job_overrides) / total_runs_per_node)
         assert num_jobs > 0
         params = self.params
         # build executor
@@ -226,11 +226,11 @@ class BaseClusterDuckLauncher(Launcher):
         job_params: List[Any] = []
         for idx in range(num_jobs):
             job_overrides_sublist = job_overrides[
-                idx * total_tasks_per_node : (idx + 1) * total_tasks_per_node
+                idx * total_runs_per_node : (idx + 1) * total_runs_per_node
             ]
             assert (
                 len(job_overrides_sublist) > 0
-                and len(job_overrides_sublist) <= total_tasks_per_node
+                and len(job_overrides_sublist) <= total_runs_per_node
             )
 
             filtered_job_overrides_sublist = [
@@ -244,8 +244,8 @@ class BaseClusterDuckLauncher(Launcher):
                     job_overrides_sublist,
                     "hydra.sweep.dir",  # job_dir_key
                     range(  # job_nums
-                        idx * total_tasks_per_node + initial_job_idx,
-                        (idx + 1) * total_tasks_per_node + initial_job_idx,
+                        idx * total_runs_per_node + initial_job_idx,
+                        (idx + 1) * total_runs_per_node + initial_job_idx,
                     ),
                     f"job_id_for_{idx}",  # job_id
                     Singleton.get_state(),  # singleton_state

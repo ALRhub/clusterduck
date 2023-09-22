@@ -33,7 +33,7 @@ class BaseQueueConf:
     parallel_runs_per_node: int = 1
     # number of tasks (i.e. hydra jobs) to complete in total in each slurm job
     # leave None to execute all overrides in a single slurm job
-    total_tasks_per_node: Optional[int] = None
+    total_runs_per_node: Optional[int] = None
     # wait until slurm jobs finish before exiting Python script
     wait_for_completion: bool = False
     # resources that should be divided up among parallel task executions
