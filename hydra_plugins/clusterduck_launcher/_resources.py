@@ -80,22 +80,48 @@ class CUDAResourcePool(ResourcePool, kind="cuda"):
 
     @staticmethod
     def get_available_gpus() -> list[int]:
-        # unset any masking of CUDA devices
-        os.environ.pop("CUDA_VISIBLE_DEVICES", None)
+        if (gpus := os.environ.get("CUDA_VISIBLE_DEVICES")) is not None:
+            return [int(gpu) for gpu in gpus.split(",")]
 
+        logger.debug(
+            "Trying to detect number of gpus using an ML library (e.g. pytorch)"
+        )
+
+        import multiprocessing as mp
+
+        ctx = mp.get_context("fork")
+        with ctx.Manager() as manager:
+            gpus = manager.list()
+            p = ctx.Process(
+                target=CUDAResourcePool._get_available_gpus_destructive,
+                args=(gpus,),
+            )
+            p.start()
+            p.join()
+
+            if gpus and isinstance(gpus[0], ImportError):
+                raise gpus[0]
+
+            return list(gpus)
+
+    @staticmethod
+    def _get_available_gpus_destructive(gpus: list[int]) -> None:
+        """These imports modify program state, so we do them in a separate process."""
         try:
             import torch
 
-            return list(range(torch.cuda.device_count()))
+            gpus.extend(range(torch.cuda.device_count()))
+            return
         except ImportError:
             pass
 
         try:
             import tensorflow as tf
 
-            return [
+            gpus.extend(
                 int(device.name) for device in tf.config.list_physical_devices("GPU")
-            ]
+            )
+            return
         except ImportError:
             pass
 
@@ -103,12 +129,15 @@ class CUDAResourcePool(ResourcePool, kind="cuda"):
             import pycuda.autoinit
             import pycuda.driver as cuda
 
-            return list(range(cuda.Device.count()))
+            gpus.extend(range(cuda.Device.count()))
+            return
         except ImportError:
             pass
 
-        raise ImportError(
-            "Either PyTorch, Tensorflow or PyCUDA must be installed to use CUDAResource"
+        gpus.append(
+            ImportError(
+                "Either PyTorch, Tensorflow or PyCUDA must be installed to use CUDAResource"
+            )
         )
 
 

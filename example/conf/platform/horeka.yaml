@@ -14,6 +14,7 @@ hydra:
     gres: gpu:4
     resources_config:
       - cpu
-      - cuda
+      - cuda:
+          gpus: [0, 1, 2, 3]
       - stagger:
           delay: 5
