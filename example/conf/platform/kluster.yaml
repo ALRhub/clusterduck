@@ -20,10 +20,10 @@ hydra:
     # clusterduck specific options
     parallel_runs_per_node: 4
     resources_config:
-      cpu:
-      cuda:
-      stagger:
-        delay: 5
+      - cpu
+      - cuda
+      - stagger:
+          delay: 5
 
   # disable logging from job to stdout, as this pollutes slurm output
   job_logging:
