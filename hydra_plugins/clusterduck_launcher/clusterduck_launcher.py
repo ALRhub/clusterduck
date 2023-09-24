@@ -105,19 +105,27 @@ class BaseClusterDuckLauncher(Launcher):
 
         resource_pools = []
         for resource in self.resources_config:
-            if isinstance(resource, str):
-                resource_pools.append(
-                    ResourcePool(kind=resource, n_workers=self.n_workers)
-                )
-            elif isinstance(resource, DictConfig):
-                items = list(resource.items())
-                assert len(items) == 1
-                kind, kwargs = items[0]
-                resource_pools.append(
-                    ResourcePool(kind=kind, n_workers=self.n_workers, **kwargs)
-                )
+            if isinstance(resource, DictConfig):
+                # e.g.
+                # - cuda:
+                # or
+                # - cuda:
+                #     gpus: [0, 1, 2, 3]
+                logger.debug(f"Received resource config as DictConfig: {resource}")
+                kind, resource_cfg = list(resource.items())[0]
             else:
-                raise ValueError(f"Unexpected resource configuration {resource}")
+                # e.g.
+                # - cuda
+                logger.debug(f"Received resource config as string type: {resource}")
+                kind, resource_cfg = resource, None
+            resource_cfg = resource_cfg or {}
+            resource_pools.append(
+                ResourcePool(
+                    kind=kind,
+                    n_workers=self.n_workers,
+                    **resource_cfg,
+                )
+            )
 
         if "torch" in sys.modules:
             logger.debug(

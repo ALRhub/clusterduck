@@ -11,3 +11,6 @@ hydra:
     parallel_runs_per_node: 1
     wait_for_completion: True
     gpus_per_node: 1  # by default, submitit local executor uses 0 gpus
+    resources_config:
+      - cpu:
+      - cuda:

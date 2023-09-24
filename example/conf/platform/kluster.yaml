@@ -19,8 +19,8 @@ hydra:
       ntasks: 1
       cpus-per-task: 8  # each node has 8 cpus, and we want all of them
     resources_config:
-      - cpu
-      - cuda
+      - cpu:
+      - cuda:
       - stagger:
           delay: 5
 
