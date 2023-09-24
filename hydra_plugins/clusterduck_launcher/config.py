@@ -45,6 +45,8 @@ class BaseQueueConf:
     #   - stagger:
     #       delay: 10
     resources_config: list = field(default_factory=list)
+    # whether to print debug statements to the SLURM stdout log file
+    verbose: bool = False
 
 
 @dataclass

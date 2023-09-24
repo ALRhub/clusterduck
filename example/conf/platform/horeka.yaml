@@ -17,4 +17,8 @@ hydra:
       - cuda:
           gpus: [0, 1, 2, 3]
       - stagger:
-          delay: 5
+  
+  # disable logging from job to stdout, as this pollutes slurm output
+  job_logging:
+    root:
+      handlers: [file]

@@ -16,10 +16,15 @@ hydra:
     exclude: node[1-3]
     mem_per_cpu: 15000  # in MB (* 8 cores in use = 120GB)
     additional_parameters:
-      ntasks: 1  # without this option, each task is duplicated n times
+      ntasks: 1
       cpus-per-task: 8  # each node has 8 cpus, and we want all of them
     resources_config:
       - cpu
       - cuda
       - stagger:
           delay: 5
+
+  # disable logging from job to stdout, as this pollutes slurm output
+  job_logging:
+    root:
+      handlers: [file]

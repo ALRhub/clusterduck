@@ -19,7 +19,7 @@ from omegaconf import DictConfig, ListConfig, OmegaConf, open_dict
 
 from .config import BaseQueueConf
 
-log = logging.getLogger("clusterduck")
+log = logging.getLogger(__name__)
 
 
 class BaseClusterDuckLauncher(Launcher):
@@ -31,12 +31,14 @@ class BaseClusterDuckLauncher(Launcher):
         total_runs_per_node: int | None,
         wait_for_completion: bool,
         resources_config: ListConfig,
+        verbose: bool,
         **params: Any,
     ) -> None:
         self.n_workers = parallel_runs_per_node
         self.total_runs_per_node = total_runs_per_node
         self.wait_for_completion = wait_for_completion
         self.resources_config = resources_config
+        self.verbose = verbose
 
         # parameters used by submitit
         self.params = {}
@@ -71,8 +73,12 @@ class BaseClusterDuckLauncher(Launcher):
         job_id: str,
         singleton_state: Dict[type, Singleton],
     ) -> list[JobReturn]:
+        from ._logging import configure_log, get_logger
         from ._resources import ResourcePool
         from ._worker_pool import WorkerPool
+
+        configure_log(self.verbose)
+        logger = get_logger()
 
         kwargs_list = [
             dict(
@@ -84,6 +90,18 @@ class BaseClusterDuckLauncher(Launcher):
             )
             for sweep_overrides, job_num in zip(sweep_overrides_list, job_nums)
         ]
+
+        # TODO: make sure this is removed
+        import sys
+
+        if "torch" in sys.modules:
+            logger.debug(
+                "Package `torch` has already been imported before resource creation."
+            )
+        else:
+            logger.debug(
+                "Package `torch` has not yet been imported before resource creation."
+            )
 
         resource_pools = []
         for resource in self.resources_config:
@@ -100,6 +118,15 @@ class BaseClusterDuckLauncher(Launcher):
                 )
             else:
                 raise ValueError(f"Unexpected resource configuration {resource}")
+
+        if "torch" in sys.modules:
+            logger.debug(
+                "Package `torch` has already been imported after resource creation."
+            )
+        else:
+            logger.debug(
+                "Package `torch` has not yet been imported after resource creation."
+            )
 
         process_manager = WorkerPool(
             n_workers=self.n_workers,
@@ -138,6 +165,11 @@ class BaseClusterDuckLauncher(Launcher):
 
         import submitit
 
+        from ._logging import configure_log, get_logger
+
+        configure_log(self.verbose)
+        logger = get_logger()
+
         assert self.hydra_context is not None
         assert self.config is not None
         assert self.task_function is not None
@@ -155,9 +187,9 @@ class BaseClusterDuckLauncher(Launcher):
             job.id = submitit.JobEnvironment().job_id  # type: ignore
             sweep_config.hydra.job.num = job_num
 
-        # TODO: separate clusterduck logging (global across overrides) from job logging (override-local)
-        logger = logging.getLogger("clusterduck")
-        logger.info(f"Running job {job_num}")
+        logger.info(
+            f"Running job {job_num} with overrides {' '.join(filter_overrides(sweep_overrides))}"
+        )
         ret = run_job(
             hydra_context=self.hydra_context,
             task_function=task_function,
@@ -233,11 +265,10 @@ class BaseClusterDuckLauncher(Launcher):
                 and len(job_overrides_sublist) <= total_runs_per_node
             )
 
-            filtered_job_overrides_sublist = [
-                " ".join(filter_overrides(overrides))
-                for overrides in job_overrides_sublist
-            ]
-            log.info(f"Launching {filtered_job_overrides_sublist} in job with id {idx}")
+            log.info(f"\tJob #{idx} :")
+            for overrides in job_overrides_sublist:
+                lst = " ".join(filter_overrides(overrides))
+                log.info(f"\t\t{lst}")
 
             job_params.append(
                 (

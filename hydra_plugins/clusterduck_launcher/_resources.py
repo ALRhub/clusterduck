@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import os
 import time
 from dataclasses import dataclass
@@ -9,7 +8,9 @@ from typing import Sequence
 import numpy as np
 import psutil
 
-logger = logging.getLogger(__name__)
+from . import _logging
+
+logger = _logging.get_logger()
 
 
 class Resource:
