@@ -15,7 +15,7 @@ from hydra.core.utils import (
 )
 from hydra.plugins.launcher import Launcher
 from hydra.types import HydraContext, TaskFunction
-from omegaconf import DictConfig, ListConfig, OmegaConf, open_dict
+from omegaconf import DictConfig, OmegaConf, open_dict
 
 from .config import BaseQueueConf
 
@@ -30,7 +30,7 @@ class BaseClusterDuckLauncher(Launcher):
         parallel_runs_per_node: int,
         total_runs_per_node: int | None,
         wait_for_completion: bool,
-        resources_config: ListConfig,
+        resources_config: DictConfig,
         verbose: bool,
         **params: Any,
     ) -> None:
@@ -104,20 +104,15 @@ class BaseClusterDuckLauncher(Launcher):
             )
 
         resource_pools = []
-        for resource in self.resources_config:
-            if isinstance(resource, DictConfig):
-                # e.g.
-                # - cuda:
-                # or
-                # - cuda:
-                #     gpus: [0, 1, 2, 3]
-                logger.debug(f"Received resource config as DictConfig: {resource}")
-                kind, resource_cfg = list(resource.items())[0]
-            else:
-                # e.g.
-                # - cuda
-                logger.debug(f"Received resource config as string type: {resource}")
-                kind, resource_cfg = resource, None
+        for kind, resource_cfg in self.resources_config.items():
+            logger.debug(f"Assigning {kind} resources with config: {resource_cfg}")
+            # e.g.
+            # resources_config:
+            #   cuda:
+            # or
+            # resources_config:
+            #   cuda:
+            #     gpus: [0, 1, 2, 3]
             resource_cfg = resource_cfg or {}
             resource_pools.append(
                 ResourcePool(

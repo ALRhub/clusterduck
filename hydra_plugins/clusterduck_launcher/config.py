@@ -1,4 +1,3 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -44,7 +43,7 @@ class BaseQueueConf:
     # resources_config:
     #   - stagger:
     #       delay: 10
-    resources_config: list = field(default_factory=list)
+    resources_config: dict[str, Optional[dict]] = field(default_factory=dict)
     # whether to print debug statements to the SLURM stdout log file
     verbose: bool = False
 

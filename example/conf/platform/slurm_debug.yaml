@@ -12,5 +12,10 @@ hydra:
     wait_for_completion: True
     gpus_per_node: 1  # by default, submitit local executor uses 0 gpus
     resources_config:
-      - cpu:
-      - cuda:
+      cpu:
+      cuda:
+
+  # disable logging from job to stdout, as this pollutes slurm output
+  job_logging:
+    root:
+      handlers: [file]
