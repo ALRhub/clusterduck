@@ -40,6 +40,31 @@ def create_resource_pools_from_cfg(
     return resource_pools
 
 
+def create_resource_pools_from_cfg(
+    config: DictConfig,
+    n_workers: int,
+) -> list[ResourcePool]:
+    resource_pools = []
+    for kind, resource_cfg in config.items():
+        logger.debug(f"Scheduling {kind} resources with config: {resource_cfg}")
+        # e.g.
+        # resources_config:
+        #   cuda:
+        # or
+        # resources_config:
+        #   cuda:
+        #     gpus: [0, 1, 2, 3]
+        resource_cfg = resource_cfg or {}
+        resource_pools.append(
+            ResourcePool(
+                kind=kind,
+                n_workers=n_workers,
+                **resource_cfg,
+            )
+        )
+    return resource_pools
+
+
 class Resource:
     def apply(self):
         raise NotImplementedError
