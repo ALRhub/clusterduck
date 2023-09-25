@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import logging
 import os
 from pathlib import Path
@@ -73,12 +74,12 @@ class BaseClusterDuckLauncher(Launcher):
         job_id: str,
         singleton_state: Dict[type, Singleton],
     ) -> list[JobReturn]:
-        from ._logging import configure_log, get_logger
+        from ._logging import configure_log
         from ._resources import ResourcePool
         from ._worker_pool import WorkerPool
 
         configure_log(self.verbose)
-        logger = get_logger()
+        logger = logging.getLogger("Clusterduck")
 
         kwargs_list = [
             dict(
@@ -105,7 +106,7 @@ class BaseClusterDuckLauncher(Launcher):
 
         resource_pools = []
         for kind, resource_cfg in self.resources_config.items():
-            logger.debug(f"Assigning {kind} resources with config: {resource_cfg}")
+            logger.debug(f"Scheduling {kind} resources with config: {resource_cfg}")
             # e.g.
             # resources_config:
             #   cuda:
@@ -138,8 +139,9 @@ class BaseClusterDuckLauncher(Launcher):
             start_method="fork",
         )
         results = process_manager.execute(
-            target=self,
+            target_fn=self,
             kwargs_list=kwargs_list,
+            setup_fn=functools.partial(configure_log, self.verbose),
         )
 
         exceptions = [
@@ -168,16 +170,11 @@ class BaseClusterDuckLauncher(Launcher):
 
         import submitit
 
-        from ._logging import configure_log, get_logger
-
-        configure_log(self.verbose)
-        logger = get_logger()
-
         assert self.hydra_context is not None
         assert self.config is not None
         assert self.task_function is not None
 
-        task_function = pickle.loads(self.task_function)
+        logger = logging.getLogger("Clusterduck.worker")
 
         Singleton.set_state(singleton_state)
         setup_globals()
@@ -190,8 +187,12 @@ class BaseClusterDuckLauncher(Launcher):
             job.id = submitit.JobEnvironment().job_id  # type: ignore
             sweep_config.hydra.job.num = job_num
 
+        logger.debug(f"Job #{job_num}: Unpickling task function...")
+
+        task_function = pickle.loads(self.task_function)
+
         logger.info(
-            f"Running job {job_num} with overrides {' '.join(filter_overrides(sweep_overrides))}"
+            f"Job #{job_num}: Running job with overrides {' '.join(filter_overrides(sweep_overrides))}"
         )
         ret = run_job(
             hydra_context=self.hydra_context,
@@ -200,7 +201,7 @@ class BaseClusterDuckLauncher(Launcher):
             job_dir_key=job_dir_key,
             job_subdir_key="hydra.sweep.subdir",
         )
-        logger.info(f"Job {job_num} completed.")
+        logger.info(f"Job #{job_num}: Job completed.")
         return ret
 
     def checkpoint(self, *args: Any, **kwargs: Any) -> Any:

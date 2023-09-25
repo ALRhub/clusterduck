@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import time
 from dataclasses import dataclass
@@ -8,9 +9,7 @@ from typing import Sequence
 import numpy as np
 import psutil
 
-from . import _logging
-
-logger = _logging.get_logger()
+logger = logging.getLogger("Clusterduck.resources")
 
 
 class Resource:

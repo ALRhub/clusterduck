@@ -27,7 +27,11 @@ class WorkerPool:
         resources: Sequence[Resource],
         pipe: Connection,
         kwargs: Mapping[str, Any],
+        setup_fn: Callable | None = None,
     ):
+        if setup_fn is not None:
+            setup_fn()
+
         for resource in resources:
             resource.apply()
 
@@ -43,8 +47,9 @@ class WorkerPool:
 
     def execute(
         self,
-        target: Callable[..., ReturnType],
+        target_fn: Callable[..., ReturnType],
         kwargs_list: Sequence[dict],
+        setup_fn: Callable | None = None,
     ) -> list[ReturnType]:
         ctx = mp.get_context(self.start_method)
         processes: list[mp.Process] = []
@@ -57,10 +62,11 @@ class WorkerPool:
             process = ctx.Process(
                 target=self.worker,
                 kwargs=dict(
-                    target=target,
+                    target=target_fn,
                     resources=resources,
                     pipe=worker_pipes[i],
                     kwargs=kwargs_list[i],
+                    setup_fn=setup_fn,
                 ),
             )
             process.start()
@@ -92,10 +98,11 @@ class WorkerPool:
                 processes[worker_id] = ctx.Process(
                     target=self.worker,
                     kwargs=dict(
-                        target=target,
+                        target=target_fn,
                         resources=resources,
                         pipe=worker_pipes[worker_id],
                         kwargs=kwargs_list[submitted_overrides],
+                        setup_fn=setup_fn,
                     ),
                 )
                 processes[worker_id].start()
