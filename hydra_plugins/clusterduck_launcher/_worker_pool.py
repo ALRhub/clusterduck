@@ -1,7 +1,7 @@
 import multiprocessing as mp
 import pickle
 from multiprocessing.connection import Connection, wait
-from typing import Any, Callable, Literal, Mapping, Sequence, TypeVar
+from typing import Any, Callable, Literal, Sequence, TypeVar
 
 import cloudpickle
 
@@ -26,17 +26,10 @@ class WorkerPool:
         target: Callable,
         resources: Sequence[Resource],
         pipe: Connection,
-        kwargs: Mapping[str, Any],
-        setup_fn: Callable | None = None,
+        **kwargs: Any,
     ):
-        if setup_fn is not None:
-            setup_fn()
-
-        for resource in resources:
-            resource.apply()
-
         try:
-            ret = target(**kwargs)
+            ret = target(resources=resources, **kwargs)
             pipe.send(cloudpickle.dumps(ret))
 
         except Exception as e:
@@ -49,7 +42,6 @@ class WorkerPool:
         self,
         target_fn: Callable[..., ReturnType],
         kwargs_list: Sequence[dict],
-        setup_fn: Callable | None = None,
     ) -> list[ReturnType]:
         ctx = mp.get_context(self.start_method)
         processes: list[mp.Process] = []
@@ -65,8 +57,7 @@ class WorkerPool:
                     target=target_fn,
                     resources=resources,
                     pipe=worker_pipes[i],
-                    kwargs=kwargs_list[i],
-                    setup_fn=setup_fn,
+                    **kwargs_list[i],
                 ),
             )
             process.start()
@@ -101,8 +92,7 @@ class WorkerPool:
                         target=target_fn,
                         resources=resources,
                         pipe=worker_pipes[worker_id],
-                        kwargs=kwargs_list[submitted_overrides],
-                        setup_fn=setup_fn,
+                        **kwargs_list[submitted_overrides],
                     ),
                 )
                 processes[worker_id].start()

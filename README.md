@@ -64,10 +64,10 @@ This will depend on the duration of a run, the `parallel_runs_per_node` setting,
 If not specified, all executions will be run in a single job.
 However only `parallel_runs_per_node` of these executions will be running at any given time.
 - **wait_for_completion:**  
-If set to true, the launcher will keep running in your login node until all SLURM jobs before exiting.
+If set to true, the launcher will keep running in your login node until all SLURM jobs have completed before exiting.
 Otherwise it will submit the SLURM jobs into the queue and then exit.
 - **resources_config:**  
-A list of resources that will be divided up among parallel runs within a SLURM job.
+Any resources that must be divided up among parallel runs within a SLURM job.
 Currently available are following options configurable resources:
   - **cpu** This will divide the runs over the available CPUs.
     - Optional argument `cpus` specifies the CPU ids available to the job. Leave blank to auto-detect.
@@ -90,11 +90,11 @@ hydra:
     total_runs_per_node: 8
     wait_for_completion: True
     resources_config:
-      - cpu
-      - cuda:
-          gpus: [0, 1, 2, 3]
-      - stagger:
-          delay: 5
+      cpu:
+      cuda:
+        gpus: [0, 1, 2, 3]  # optional
+      stagger:
+        delay: 5
 ```
 
 Further look into the example folder for a working example with multiple example configurations.

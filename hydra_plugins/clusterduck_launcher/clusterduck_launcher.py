@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-import functools
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence
+
+if TYPE_CHECKING:
+    from ._wrapped_task import WrappedTaskFunction
+    from ._resources import Resource
 
 from hydra.core.singleton import Singleton
 from hydra.core.utils import (
@@ -49,7 +52,7 @@ class BaseClusterDuckLauncher(Launcher):
             self.params[k] = v
 
         self.config: Optional[DictConfig] = None
-        self.task_function: Optional[bytes] = None
+        self.task_function: Optional[WrappedTaskFunction] = None
         self.sweep_configs: Optional[TaskFunction] = None
         self.hydra_context: Optional[HydraContext] = None
 
@@ -60,11 +63,11 @@ class BaseClusterDuckLauncher(Launcher):
         task_function: TaskFunction,
         config: DictConfig,
     ) -> None:
-        import cloudpickle
+        from ._wrapped_task import WrappedTaskFunction
 
         self.config = config
         self.hydra_context = hydra_context
-        self.task_function = cloudpickle.dumps(task_function)
+        self.task_function = WrappedTaskFunction(task_function)
 
     def run_workers(
         self,
@@ -74,8 +77,12 @@ class BaseClusterDuckLauncher(Launcher):
         job_id: str,
         singleton_state: Dict[type, Singleton],
     ) -> list[JobReturn]:
+        """This method runs inside the SLURM job and starts worker processes to run hydra jobs.
+        At this point, no Hydra logging has been configured, only submitit's logging, which logs
+        to stdout and stderr.
+        """
         from ._logging import configure_log
-        from ._resources import ResourcePool
+        from ._resources import create_resource_pools_from_cfg
         from ._worker_pool import WorkerPool
 
         configure_log(self.verbose)
@@ -104,24 +111,9 @@ class BaseClusterDuckLauncher(Launcher):
                 "Package `torch` has not yet been imported before resource creation."
             )
 
-        resource_pools = []
-        for kind, resource_cfg in self.resources_config.items():
-            logger.debug(f"Scheduling {kind} resources with config: {resource_cfg}")
-            # e.g.
-            # resources_config:
-            #   cuda:
-            # or
-            # resources_config:
-            #   cuda:
-            #     gpus: [0, 1, 2, 3]
-            resource_cfg = resource_cfg or {}
-            resource_pools.append(
-                ResourcePool(
-                    kind=kind,
-                    n_workers=self.n_workers,
-                    **resource_cfg,
-                )
-            )
+        resource_pools = create_resource_pools_from_cfg(
+            self.resources_config, self.n_workers
+        )
 
         if "torch" in sys.modules:
             logger.debug(
@@ -141,7 +133,6 @@ class BaseClusterDuckLauncher(Launcher):
         results = process_manager.execute(
             target_fn=self,
             kwargs_list=kwargs_list,
-            setup_fn=functools.partial(configure_log, self.verbose),
         )
 
         exceptions = [
@@ -164,17 +155,20 @@ class BaseClusterDuckLauncher(Launcher):
         job_num: int,
         job_id: str,
         singleton_state: Dict[type, Singleton],
+        resources: Sequence[Resource],
     ) -> JobReturn:
+        """This method runs inside the SLURM job inside a fresh process forked by `run_workers`.
+        When this function starts, no logging of any kind has been configured. Hydra job logging
+        is configured inside `run_job`, so we delay important operations like applying resource
+        configurations and unpickling the task function until the __call__ method of the
+        WrappedTaskFunction, which is called from there.
+        """
         # lazy import to ensure plugin discovery remains fast
-        import pickle
-
         import submitit
 
         assert self.hydra_context is not None
         assert self.config is not None
         assert self.task_function is not None
-
-        logger = logging.getLogger("Clusterduck.worker")
 
         Singleton.set_state(singleton_state)
         setup_globals()
@@ -187,22 +181,15 @@ class BaseClusterDuckLauncher(Launcher):
             job.id = submitit.JobEnvironment().job_id  # type: ignore
             sweep_config.hydra.job.num = job_num
 
-        logger.debug(f"Job #{job_num}: Unpickling task function...")
+        self.task_function.set_resources(resources)
 
-        task_function = pickle.loads(self.task_function)
-
-        logger.info(
-            f"Job #{job_num}: Running job with overrides {' '.join(filter_overrides(sweep_overrides))}"
-        )
-        ret = run_job(
+        return run_job(
             hydra_context=self.hydra_context,
-            task_function=task_function,
+            task_function=self.task_function,
             config=sweep_config,
             job_dir_key=job_dir_key,
             job_subdir_key="hydra.sweep.subdir",
         )
-        logger.info(f"Job #{job_num}: Job completed.")
-        return ret
 
     def checkpoint(self, *args: Any, **kwargs: Any) -> Any:
         """Resubmit the current callable at its current state with the same initial arguments."""
@@ -214,6 +201,11 @@ class BaseClusterDuckLauncher(Launcher):
     def launch(
         self, job_overrides: Sequence[Sequence[str]], initial_job_idx: int
     ) -> Sequence[JobReturn]:
+        """This method runs inside the main Hydra process on the login node. At this point, only
+        Hydra logging (not job logging) has been configured, which by default logs everything of
+        level INFO and higher to stdout under the tag [HYDRA].
+        """
+
         # lazy import to ensure plugin discovery remains fast
         import math
 
