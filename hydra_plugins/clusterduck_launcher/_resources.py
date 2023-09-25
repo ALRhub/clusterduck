@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import os
 import time
 from dataclasses import dataclass
@@ -101,6 +100,8 @@ class CUDAResourcePool(ResourcePool, kind="cuda"):
         gpu_groups: list[list[int]] = (
             np.array(gpus).repeat(workers_per_gpu).reshape(-1, gpus_per_worker).tolist()
         )
+        if n_workers > 1:
+            logger.debug(f"Allocated the following GPU groups: {gpu_groups}")
         self.gpu_resources = [CUDAResource(gpus) for gpus in gpu_groups]
 
     def get(self, index: int) -> Resource:
