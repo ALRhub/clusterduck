@@ -7,11 +7,13 @@ defaults:
 hydra:
   mode: MULTIRUN  # needed for launcher to be used
   launcher:
+    # launcher/cluster specific options
     timeout_min: 5
-    parallel_runs_per_node: 2
-    wait_for_completion: False
     partition: dev_accelerated
     gres: gpu:4
+
+    # clusterduck specific options
+    parallel_runs_per_node: 2
     resources_config:
       cpu:
       cuda:

@@ -34,17 +34,6 @@ To run the example script on the HoreKa cluster, use:
 python example/train.py --multirun model=convnet,transformer +iteration="range(2)" +platform=horeka
 ```
 
-### Development
-PyCUDA is a helpful tool for working with CUDA devices outside of the context of a machine learning library like pytorch. We recommend installing it with conda:
-```bash
-conda install pycuda
-```
-
-Install additional requirements for development using:
-```bash
-pip install ".[all]"
-```
-
 ## Configuration Options
 This plugin is heavily inspired by the [hydra-submitit-launcher plugin](https://hydra.cc/docs/plugins/submitit_launcher/), and provides all parameters of that original plugin. See their documentation for details about those parameters.
 
@@ -75,26 +64,40 @@ Currently available are following options configurable resources:
     - Optional argument `gpus` specifies the GPU ids available to the job. Leave blank to auto-detect.
   - **stagger:** This will delay the start of each task by the specified amount of seconds. This can be useful if you want to avoid starting all tasks at the same time, e.g. to avoid overloading the file system.
     - Argument `delay` specifies the delay amount in seconds.
+- **verbose**
+If set to true, additional debug information will be printed to the SLURM job log (related to scheduling runs within a job and allocating resources), and to each hydra run log (related to setting up the resources for the run).
+If you are having difficulties with the plugin, setting this to true might help understand what is going on.
 
 Here an example of a `hydra/launcher` config that uses all of the above options:
 ```yaml
 hydra:
   launcher:
-    # launcher specific options
+    # launcher/cluster specific options
     timeout_min: 5
     partition: dev_accelerated
     gres: gpu:4
     
     # clusterduck specific options
-    parallel_runs_per_node: 2
+    parallel_runs_per_node: 4
     total_runs_per_node: 8
-    wait_for_completion: True
+    wait_for_completion: False
     resources_config:
       cpu:
       cuda:
-        gpus: [0, 1, 2, 3]  # optional
+        gpus: [0, 1, 2, 3]  # optional, will auto-detect if left blank
       stagger:
         delay: 5
 ```
 
 Further look into the example folder for a working example with multiple example configurations.
+
+### Development
+PyCUDA is a helpful tool for working with CUDA devices outside of the context of a machine learning library like pytorch. We recommend installing it with conda:
+```bash
+conda install pycuda
+```
+
+Install additional requirements for development using:
+```bash
+pip install ".[all]"
+```
