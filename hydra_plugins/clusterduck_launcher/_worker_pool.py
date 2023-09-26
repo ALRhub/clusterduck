@@ -5,9 +5,12 @@ from typing import Any, Callable, Literal, Sequence, TypeVar
 
 import cloudpickle
 
+from ._logging import get_logger
 from ._resources import Resource, ResourcePool
 
 ReturnType = TypeVar("ReturnType")
+
+logger = get_logger(__name__)
 
 
 class WorkerPool:
@@ -60,6 +63,10 @@ class WorkerPool:
                     **kwargs_list[i],
                 ),
             )
+            logger.info(
+                f"Starting process #{i} in slot #{i} with arguments: {kwargs_list[i]}"
+            )
+            logger.debug(f"This process will be given resources: {resources}")
             process.start()
             processes.append(process)
 
@@ -75,11 +82,18 @@ class WorkerPool:
                 processes[worker_id].join()
 
                 if not manager_pipes[worker_id].poll():
+                    logger.error(
+                        f"Process {submitted_overrides - 1} crashed with no return value."
+                    )
                     raise RuntimeError("Worker process sent no return value.")
                 result = pickle.loads(manager_pipes[worker_id].recv())
 
                 if isinstance(result, Exception):
+                    logger.error(
+                        f"Process {submitted_overrides - 1} completed with an uncaught exception."
+                    )
                     raise result
+                logger.debug(f"Process {submitted_overrides - 1} completed normally.")
                 results.append(result)
 
                 resources = [
@@ -95,6 +109,10 @@ class WorkerPool:
                         **kwargs_list[submitted_overrides],
                     ),
                 )
+                logger.info(
+                    f"Starting process #{submitted_overrides} in slot #{worker_id} with arguments: {kwargs_list[submitted_overrides]}"
+                )
+                logger.debug(f"This process will be given resources: {resources}")
                 processes[worker_id].start()
                 submitted_overrides += 1
                 if submitted_overrides == len(kwargs_list):
@@ -104,6 +122,7 @@ class WorkerPool:
             process.join()
 
             if not manager_pipes[worker_id].poll():
+                # TODO: maybe do not throw an Exception here, and this stops job
                 raise RuntimeError("Worker process sent no return value.")
             result = pickle.loads(manager_pipes[worker_id].recv())
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import os
 import time
 from dataclasses import dataclass
@@ -10,7 +9,9 @@ import numpy as np
 import psutil
 from omegaconf import DictConfig
 
-logger = logging.getLogger("Clusterduck.resources")
+from ._logging import get_logger
+
+logger = get_logger(__name__)
 
 
 def create_resource_pools_from_cfg(
@@ -99,6 +100,8 @@ class CUDAResourcePool(ResourcePool, kind="cuda"):
         gpu_groups: list[list[int]] = (
             np.array(gpus).repeat(workers_per_gpu).reshape(-1, gpus_per_worker).tolist()
         )
+        if n_workers > 1:
+            logger.debug(f"Allocated the following GPU groups: {gpu_groups}")
         self.gpu_resources = [CUDAResource(gpus) for gpus in gpu_groups]
 
     def get(self, index: int) -> Resource:
@@ -203,6 +206,8 @@ class CPUResourcePool(ResourcePool, kind="cpu"):
         cpu_groups: list[list[int]] = (
             np.array(cpus).reshape(-1, cpus_per_worker).tolist()
         )
+        if n_workers > 1:
+            logger.debug(f"Allocated the following CPU groups: {cpu_groups}")
         self.cpu_resources = [CPUResource(cpus) for cpus in cpu_groups]
 
     def get(self, index: int) -> Resource:

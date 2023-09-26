@@ -1,11 +1,11 @@
-import logging
 from typing import Any, Callable, Sequence
 
 import cloudpickle
 
+from ._logging import get_logger
 from ._resources import Resource
 
-logger = logging.getLogger("Clusterduck.utils")
+logger = get_logger(__name__)
 
 
 class WrappedTaskFunction:

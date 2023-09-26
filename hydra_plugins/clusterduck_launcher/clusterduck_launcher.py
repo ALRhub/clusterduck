@@ -23,7 +23,7 @@ from omegaconf import DictConfig, OmegaConf, open_dict
 
 from .config import BaseQueueConf
 
-log = logging.getLogger(__name__)
+log = logging.getLogger("clusterduck.launcher")
 
 
 class BaseClusterDuckLauncher(Launcher):
@@ -81,12 +81,12 @@ class BaseClusterDuckLauncher(Launcher):
         At this point, no Hydra logging has been configured, only submitit's logging, which logs
         to stdout and stderr.
         """
-        from ._logging import configure_log
+        from ._logging import configure_log, get_logger
         from ._resources import create_resource_pools_from_cfg
         from ._worker_pool import WorkerPool
 
         configure_log(self.verbose)
-        logger = logging.getLogger("Clusterduck")
+        logger = get_logger("launcher")
 
         kwargs_list = [
             dict(
@@ -100,29 +100,24 @@ class BaseClusterDuckLauncher(Launcher):
         ]
 
         # TODO: make sure this is removed
+        import os
         import sys
 
-        if "torch" in sys.modules:
-            logger.debug(
-                "Package `torch` has already been imported before resource creation."
-            )
-        else:
-            logger.debug(
-                "Package `torch` has not yet been imported before resource creation."
-            )
+        for key, value in os.environ.items():
+            if key.startswith("SLURM") or key.startswith("SUBMITIT"):
+                logger.debug(f"{key}={value}")
+
+        logger.debug(
+            f"Package `torch` has {'already' if 'torch' in sys.modules else 'not yet'} been imported before resource creation."
+        )
 
         resource_pools = create_resource_pools_from_cfg(
             self.resources_config, self.n_workers
         )
 
-        if "torch" in sys.modules:
-            logger.debug(
-                "Package `torch` has already been imported after resource creation."
-            )
-        else:
-            logger.debug(
-                "Package `torch` has not yet been imported after resource creation."
-            )
+        logger.debug(
+            f"Package `torch` has {'already' if 'torch' in sys.modules else 'not yet'} been imported before resource creation."
+        )
 
         process_manager = WorkerPool(
             n_workers=self.n_workers,
@@ -285,8 +280,8 @@ class BaseClusterDuckLauncher(Launcher):
         if self.wait_for_completion:
             return [result for j in jobs for result in j.results()[0]]
         else:
-            # we do our best to emulate what hydra.core.utils.run_job would return by doing most
-            # of what BaseSubmititLauncher.__call__ does but with a no-op task_function
+            # we do our best to emulate what BaseSubmititLauncher.__call__ would do but with a
+            # no-op task_function
             assert self.hydra_context is not None
             assert self.config is not None
             assert self.task_function is not None
