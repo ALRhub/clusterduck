@@ -8,10 +8,16 @@ Install clusterduck with `pip install .`
 pip install .
 ```
 
-An editable install is only allowed if it is strict, using the following command:
+Developers should note that Hydra plugins are not compatible with new PEP 660-style editable installs.
+In order to perform an editable install, either use [compatibility mode](https://setuptools.pypa.io/en/latest/userguide/development_mode.html#legacy-behavior):
+```bash
+pip install -e . --config-settings editable_mode=compat
+```
+or use [strict editable mode](https://setuptools.pypa.io/en/latest/userguide/development_mode.html#strict-editable-installs).
 ```bash
 pip install -e . --config-settings editable_mode=strict
 ```
+Be aware that strict mode installs do not expose new files created in the project until the installation is performed again.
 
 ### Examples
 The example script requires a few additional dependencies. Install with:
