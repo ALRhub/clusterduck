@@ -122,7 +122,7 @@ class WorkerPool:
             process.join()
 
             if not manager_pipes[worker_id].poll():
-                # TODO: maybe do not throw an Exception here, and this stops job
+                # TODO: maybe do not throw an Exception here, as this stops job
                 raise RuntimeError("Worker process sent no return value.")
             result = pickle.loads(manager_pipes[worker_id].recv())
 

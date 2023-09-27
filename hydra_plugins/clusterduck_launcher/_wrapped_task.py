@@ -17,6 +17,11 @@ class WrappedTaskFunction:
         self.resources = resources
 
     def __call__(self, *args: Any, **kwds: Any) -> Any:
+        """This method runs inside the SLURM job inside a fresh process forked by `run_workers`.
+        This method is called by Hydra's `run_job`, so Hydra's job_logging has been configured.
+        Because Hydra has been set up, the Hydra config is also accessible via
+        `from hydra.core.hydra_config import HydraConfig`.
+        """
         assert self.resources is not None
 
         logger.debug("Setting allocated resources...")

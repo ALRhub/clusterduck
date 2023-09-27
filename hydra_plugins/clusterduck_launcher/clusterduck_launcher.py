@@ -81,12 +81,11 @@ class BaseClusterDuckLauncher(Launcher):
         At this point, no Hydra logging has been configured, only submitit's logging, which logs
         to stdout and stderr.
         """
-        from ._logging import configure_log, get_logger
+        from ._logging import configure_log
         from ._resources import create_resource_pools_from_cfg
         from ._worker_pool import WorkerPool
 
         configure_log(self.verbose)
-        logger = get_logger("launcher")
 
         kwargs_list = [
             dict(
@@ -99,24 +98,8 @@ class BaseClusterDuckLauncher(Launcher):
             for sweep_overrides, job_num in zip(sweep_overrides_list, job_nums)
         ]
 
-        # TODO: make sure this is removed
-        import os
-        import sys
-
-        for key, value in os.environ.items():
-            if key.startswith("SLURM") or key.startswith("SUBMITIT"):
-                logger.debug(f"{key}={value}")
-
-        logger.debug(
-            f"Package `torch` has {'already' if 'torch' in sys.modules else 'not yet'} been imported before resource creation."
-        )
-
         resource_pools = create_resource_pools_from_cfg(
             self.resources_config, self.n_workers
-        )
-
-        logger.debug(
-            f"Package `torch` has {'already' if 'torch' in sys.modules else 'not yet'} been imported before resource creation."
         )
 
         process_manager = WorkerPool(
@@ -153,7 +136,7 @@ class BaseClusterDuckLauncher(Launcher):
         resources: Sequence[Resource],
     ) -> JobReturn:
         """This method runs inside the SLURM job inside a fresh process forked by `run_workers`.
-        When this function starts, no logging of any kind has been configured. Hydra job logging
+        When this method starts, no logging of any kind has been configured. Hydra job logging
         is configured inside `run_job`, so we delay important operations like applying resource
         configurations and unpickling the task function until the __call__ method of the
         WrappedTaskFunction, which is called from there.
