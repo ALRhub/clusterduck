@@ -1,12 +1,20 @@
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from hydra.core.config_search_path import ConfigSearchPath
 from hydra.core.config_store import ConfigStore
+from hydra.plugins.search_path_plugin import SearchPathPlugin
 
 
 @dataclass
 class BaseQueueConf:
     """Configuration shared by all executors"""
+
+    defaults: List[Any] = field(
+        default_factory=lambda: [
+            {"manager_logging": "default"},
+        ]
+    )
 
     submitit_folder: str = "${hydra.sweep.dir}/submitit/%j"
 
@@ -114,3 +122,12 @@ ConfigStore.instance().store(
     node=SlurmQueueConf(),
     provider="clusterduck",
 )
+
+
+class ClusterduckSearchPathPlugin(SearchPathPlugin):
+    def manipulate_search_path(self, search_path: ConfigSearchPath) -> None:
+        # Appends the search path for this plugin to the end of the search path
+        search_path.append(
+            provider="clusterduck",
+            path="pkg://hydra_plugins.clusterduck_launcher.conf",
+        )
