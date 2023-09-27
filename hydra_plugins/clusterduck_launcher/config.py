@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 from hydra.core.config_search_path import ConfigSearchPath
 from hydra.core.config_store import ConfigStore
 from hydra.plugins.search_path_plugin import SearchPathPlugin
+from omegaconf import MISSING
 
 
 @dataclass
@@ -52,6 +53,8 @@ class BaseQueueConf:
     #   - stagger:
     #       delay: 10
     resources_config: dict[str, Optional[dict]] = field(default_factory=dict)
+    # logging configuration for the manager process that allocates resources and starts workers
+    manager_logging: Dict[str, Any] = MISSING
     # whether to print debug statements to the SLURM stdout log file
     verbose: bool = False
 

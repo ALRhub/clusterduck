@@ -36,6 +36,7 @@ class BaseClusterDuckLauncher(Launcher):
         wait_for_completion: bool,
         resources_config: DictConfig,
         verbose: bool,
+        manager_logging: DictConfig,
         **params: Any,
     ) -> None:
         self.n_workers = parallel_runs_per_node

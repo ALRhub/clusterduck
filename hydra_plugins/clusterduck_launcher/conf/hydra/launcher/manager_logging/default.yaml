@@ -12,7 +12,7 @@ handlers:
     class: logging.FileHandler
     formatter: simple
     # absolute file path
-    filename: ${hydra.runtime.output_dir}/${hydra.job.name}.log
+    filename: ${hydra.sweep.dir}/.clusterduck/%j
 root:
   level: INFO
   handlers: [console, file]
