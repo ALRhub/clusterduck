@@ -221,6 +221,51 @@ class EGLDeviceResourcePool(GPUResourcePool, kind="egl"):
 
 
 @dataclass
+class PygletDeviceResource(Resource):
+    gpu_device: int
+
+    def apply(self):
+        logger.debug(f"Setting pyglet headless device to {self.gpu_device}")
+        os.environ["PYGLET_HEADLESS_DEVICE"] = str(self.gpu_device)
+
+
+class PygletDeviceResourcePool(GPUResourcePool, kind="pyglet"):
+    def __init__(
+        self,
+        kind: str,
+        n_workers: int,
+        gpus: Sequence[int],
+    ) -> None:
+        # TODO: for auto-detecting GPUs, should we pay attention to CUDA_VISIBLE_DEVICES or not?
+        n_gpus = len(gpus)
+
+        if n_workers >= n_gpus:
+            if n_workers % n_gpus:
+                raise ValueError(
+                    f"The number of workers ({n_workers}) must be divisible by the number of GPUs ({n_gpus})."
+                )
+        else:
+            if n_gpus % n_workers:
+                raise ValueError(
+                    f"The number of workers ({n_workers}) must evenly divide the number of GPUs ({n_gpus})."
+                )
+
+        workers_per_gpu = max(1, n_workers // n_gpus)
+        gpus_per_worker = max(1, n_gpus // n_workers)
+        gpus_allocs: list[int] = (
+            np.array(gpus).repeat(workers_per_gpu)[::gpus_per_worker].tolist()
+        )
+        if n_workers > 1:
+            logger.debug(
+                f"EGL contexts will be allocated the following GPUs: {gpus_allocs}"
+            )
+        self.gpu_resources = [PygletDeviceResource(gpu) for gpu in gpus_allocs]
+
+    def get(self, index: int) -> PygletDeviceResource:
+        return self.gpu_resources[index]
+
+
+@dataclass
 class CPUResource(Resource):
     cpus: list[int]
 
