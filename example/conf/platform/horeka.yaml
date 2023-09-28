@@ -24,8 +24,7 @@ hydra:
       cpu:
       cuda:
         gpus: [0, 1, 2, 3]  # optional, will auto-detect if left blank
-      pyglet:
-        gpus: [0, 1, 2, 3]  # mandatory (for now)
+      headless_render:
       stagger:
         delay: 5
 

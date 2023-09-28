@@ -17,8 +17,7 @@ hydra:
     resources_config:
       cpu:
       cuda:
-      pyglet:
-        gpus: [0]  # mandatory (for now)
+      headless_render:
 
   # disable logging from job to stdout, as this pollutes slurm output
   job_logging:

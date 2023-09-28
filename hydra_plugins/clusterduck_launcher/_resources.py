@@ -63,10 +63,21 @@ class ResourcePool:
         raise NotImplementedError
 
 
-class GPUResourcePool(ResourcePool):
+class GpuResources(ResourcePool):
     @staticmethod
     def get_available_gpus() -> list[int]:
         if (gpus := os.environ.get("CUDA_VISIBLE_DEVICES")) is not None:
+            # SLURM sets CUDA_VISIBLE_DEVICES for each job and each step
+            # https://slurm.schedmd.com/gres.html#GPU_Management
+            logger.debug(
+                "Using `CUDA_VISIBLE_DEVICES` to determine the available GPU resources."
+            )
+            return [int(gpu) for gpu in gpus.split(",")]
+
+        if (gpus := os.environ.get("SLURM_JOB_GPUS")) is not None:
+            logger.debug(
+                "Using `SLURM_JOB_GPUS` to determine the available GPU resources."
+            )
             return [int(gpu) for gpu in gpus.split(",")]
 
         logger.debug(
@@ -79,24 +90,39 @@ class GPUResourcePool(ResourcePool):
         with ctx.Manager() as manager:
             gpus = manager.list()
             p = ctx.Process(
-                target=GPUResourcePool._get_available_gpus_destructive,
+                target=GpuResources._get_available_gpus_destructive,
                 args=(gpus,),
             )
             p.start()
             p.join()
 
-            if gpus and isinstance(gpus[0], ImportError):
-                raise gpus[0]
+            if gpus and gpus[0] is None:
+                raise RuntimeError(
+                    "Either pycuda, Pytorch, or TensorFlow must be installed in order to auto-detect GPU resources."
+                )
 
             return list(gpus)
 
     @staticmethod
-    def _get_available_gpus_destructive(gpus: list[int]) -> None:
+    def _get_available_gpus_destructive(gpus: list[int | None]) -> None:
         """These imports modify program state, so we do them in a separate process."""
+        try:
+            import pycuda.autoinit
+            import pycuda.driver as cuda
+
+            n_gpus = cuda.Device.count()
+            logger.debug(f"Found {n_gpus} GPUs using pycuda")
+            gpus.extend(range(n_gpus))
+            return
+        except ImportError:
+            pass
+
         try:
             import torch
 
-            gpus.extend(range(torch.cuda.device_count()))
+            n_gpus = torch.cuda.device_count()
+            logger.debug(f"Found {n_gpus} GPUs using Pytorch")
+            gpus.extend(range(n_gpus))
             return
         except ImportError:
             pass
@@ -104,39 +130,27 @@ class GPUResourcePool(ResourcePool):
         try:
             import tensorflow as tf
 
-            gpus.extend(
-                int(device.name) for device in tf.config.list_physical_devices("GPU")
-            )
+            devices = tf.config.list_physical_devices("GPU")
+            logger.debug(f"Found the following GPUs using TensorFlow: {devices}")
+            gpus.extend(int(device.name) for device in devices)
             return
         except ImportError:
             pass
 
-        try:
-            import pycuda.autoinit
-            import pycuda.driver as cuda
-
-            gpus.extend(range(cuda.Device.count()))
-            return
-        except ImportError:
-            pass
-
-        gpus.append(
-            ImportError(
-                "Either PyTorch, Tensorflow or PyCUDA must be installed to use CUDAResource"
-            )
-        )
+        # None signals that auto-detection of GPUs has failed
+        gpus.append(None)
 
 
 @dataclass
-class CUDAResource(Resource):
-    cuda_devices: list[int]
+class CudaDevices(Resource):
+    gpus: list[int]
 
     def apply(self):
-        logger.debug(f"Setting CUDA devices to {self.cuda_devices}")
-        os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, self.cuda_devices))
+        logger.debug(f"Setting CUDA devices to {self.gpus}")
+        os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, self.gpus))
 
 
-class CUDAResourcePool(GPUResourcePool, kind="cuda"):
+class Cuda(GpuResources, kind="cuda"):
     def __init__(
         self,
         kind: str,
@@ -169,29 +183,34 @@ class CUDAResourcePool(GPUResourcePool, kind="cuda"):
             logger.debug(
                 f"CUDA will be allocated the following GPU groups: {gpu_groups}"
             )
-        self.gpu_resources = [CUDAResource(gpus) for gpus in gpu_groups]
+        self.gpu_resources = [CudaDevices(gpus) for gpus in gpu_groups]
 
-    def get(self, index: int) -> CUDAResource:
+    def get(self, index: int) -> CudaDevices:
         return self.gpu_resources[index]
 
 
 @dataclass
-class EGLResource(Resource):
-    egl_device: int
+class HeadlessRenderDevice(Resource):
+    gpu: int
 
     def apply(self):
-        logger.debug(f"Setting EGL device ID to {self.egl_device}")
-        os.environ["EGL_DEVICE_ID"] = str(self.egl_device)
+        logger.debug(f"Setting EGL device ID to {self.gpu}")
+        os.environ["EGL_DEVICE_ID"] = str(self.gpu)
+        logger.debug(f"Setting pyglet headless device to {self.gpu}")
+        os.environ["PYGLET_HEADLESS_DEVICE"] = str(self.gpu)
 
 
-class EGLDeviceResourcePool(GPUResourcePool, kind="egl"):
+class HeadlessRendering(GpuResources, kind="headless_render"):
     def __init__(
         self,
         kind: str,
         n_workers: int,
         gpus: Sequence[int],
     ) -> None:
-        # TODO: for auto-detecting GPUs, should we pay attention to CUDA_VISIBLE_DEVICES or not?
+        if gpus is None:
+            gpus = self.get_available_gpus()
+            logger.info(f"Auto-detected the following CUDA devices: {gpus}")
+
         n_gpus = len(gpus)
 
         if n_workers >= n_gpus:
@@ -214,59 +233,14 @@ class EGLDeviceResourcePool(GPUResourcePool, kind="egl"):
             logger.debug(
                 f"EGL contexts will be allocated the following GPUs: {gpus_allocs}"
             )
-        self.gpu_resources = [EGLResource(gpu) for gpu in gpus_allocs]
+        self.gpu_resources = [HeadlessRenderDevice(gpu) for gpu in gpus_allocs]
 
-    def get(self, index: int) -> EGLResource:
+    def get(self, index: int) -> HeadlessRenderDevice:
         return self.gpu_resources[index]
 
 
 @dataclass
-class PygletDeviceResource(Resource):
-    gpu_device: int
-
-    def apply(self):
-        logger.debug(f"Setting pyglet headless device to {self.gpu_device}")
-        os.environ["PYGLET_HEADLESS_DEVICE"] = str(self.gpu_device)
-
-
-class PygletDeviceResourcePool(GPUResourcePool, kind="pyglet"):
-    def __init__(
-        self,
-        kind: str,
-        n_workers: int,
-        gpus: Sequence[int],
-    ) -> None:
-        # TODO: for auto-detecting GPUs, should we pay attention to CUDA_VISIBLE_DEVICES or not?
-        n_gpus = len(gpus)
-
-        if n_workers >= n_gpus:
-            if n_workers % n_gpus:
-                raise ValueError(
-                    f"The number of workers ({n_workers}) must be divisible by the number of GPUs ({n_gpus})."
-                )
-        else:
-            if n_gpus % n_workers:
-                raise ValueError(
-                    f"The number of workers ({n_workers}) must evenly divide the number of GPUs ({n_gpus})."
-                )
-
-        workers_per_gpu = max(1, n_workers // n_gpus)
-        gpus_per_worker = max(1, n_gpus // n_workers)
-        gpus_allocs: list[int] = (
-            np.array(gpus).repeat(workers_per_gpu)[::gpus_per_worker].tolist()
-        )
-        if n_workers > 1:
-            logger.debug(
-                f"EGL contexts will be allocated the following GPUs: {gpus_allocs}"
-            )
-        self.gpu_resources = [PygletDeviceResource(gpu) for gpu in gpus_allocs]
-
-    def get(self, index: int) -> PygletDeviceResource:
-        return self.gpu_resources[index]
-
-
-@dataclass
-class CPUResource(Resource):
+class CpuGroup(Resource):
     cpus: list[int]
 
     def apply(self):
@@ -274,7 +248,7 @@ class CPUResource(Resource):
         psutil.Process().cpu_affinity(self.cpus)
 
 
-class CPUResourcePool(ResourcePool, kind="cpu"):
+class Cpus(ResourcePool, kind="cpu"):
     def __init__(
         self,
         kind: str,
@@ -303,9 +277,9 @@ class CPUResourcePool(ResourcePool, kind="cpu"):
         )
         if n_workers > 1:
             logger.debug(f"Allocated the following CPU groups: {cpu_groups}")
-        self.cpu_resources = [CPUResource(cpus) for cpus in cpu_groups]
+        self.cpu_resources = [CpuGroup(cpus) for cpus in cpu_groups]
 
-    def get(self, index: int) -> CPUResource:
+    def get(self, index: int) -> CpuGroup:
         return self.cpu_resources[index]
 
     @staticmethod
