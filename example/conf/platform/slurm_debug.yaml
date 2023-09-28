@@ -17,6 +17,8 @@ hydra:
     resources_config:
       cpu:
       cuda:
+      egl:
+        gpus: [0]  # mandatory (for now)
 
   # disable logging from job to stdout, as this pollutes slurm output
   job_logging:

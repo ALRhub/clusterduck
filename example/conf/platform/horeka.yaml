@@ -24,6 +24,8 @@ hydra:
       cpu:
       cuda:
         gpus: [0, 1, 2, 3]  # optional, will auto-detect if left blank
+      egl:
+        gpus: [0, 1, 2, 3]  # mandatory (for now)
       stagger:
         delay: 5
 

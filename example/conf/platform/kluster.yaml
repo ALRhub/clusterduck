@@ -21,6 +21,8 @@ hydra:
       cpu:
         cpus: [0, 1, 2, 3, 10, 11, 12, 13]  # since auto-detect fails, enumerate all CPUs
       cuda:
+      egl:
+        gpus: [0, 1, 2, 3]  # mandatory (for now)
       stagger:
         delay: 5
 

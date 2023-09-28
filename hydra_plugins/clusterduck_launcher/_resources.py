@@ -47,9 +47,10 @@ class Resource:
 class ResourcePool:
     _subclasses: dict[str, type[ResourcePool]] = {}
 
-    def __init_subclass__(cls, *, kind: str, **kwargs) -> None:
+    def __init_subclass__(cls, *, kind: str | None = None, **kwargs) -> None:
         super().__init_subclass__(**kwargs)
-        cls._subclasses[kind] = cls
+        if kind is not None:
+            cls._subclasses[kind] = cls
 
     def __new__(cls, *args, kind: str, **kwargs) -> ResourcePool:
         try:
@@ -62,51 +63,7 @@ class ResourcePool:
         raise NotImplementedError
 
 
-@dataclass
-class CUDAResource(Resource):
-    cuda_devices: list[int]
-
-    def apply(self):
-        logger.debug(f"Setting CUDA devices to {self.cuda_devices}")
-        os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, self.cuda_devices))
-
-
-class CUDAResourcePool(ResourcePool, kind="cuda"):
-    def __init__(
-        self,
-        kind: str,
-        n_workers: int,
-        gpus: Sequence[int] | None = None,
-    ) -> None:
-        if gpus is None:
-            gpus = self.get_available_gpus()
-            logger.info(f"Auto-detected the following CUDA devices: {gpus}")
-
-        n_gpus = len(gpus)
-
-        if n_workers >= n_gpus:
-            if n_workers % n_gpus:
-                raise ValueError(
-                    f"The number of workers ({n_workers}) must be divisible by the number of GPUs ({n_gpus})."
-                )
-        else:
-            if n_gpus % n_workers:
-                raise ValueError(
-                    f"The number of workers ({n_workers}) must evenly divide the number of GPUs ({n_gpus})."
-                )
-
-        workers_per_gpu = max(1, n_workers // n_gpus)
-        gpus_per_worker = max(1, n_gpus // n_workers)
-        gpu_groups: list[list[int]] = (
-            np.array(gpus).repeat(workers_per_gpu).reshape(-1, gpus_per_worker).tolist()
-        )
-        if n_workers > 1:
-            logger.debug(f"Allocated the following GPU groups: {gpu_groups}")
-        self.gpu_resources = [CUDAResource(gpus) for gpus in gpu_groups]
-
-    def get(self, index: int) -> Resource:
-        return self.gpu_resources[index]
-
+class GPUResourcePool(ResourcePool):
     @staticmethod
     def get_available_gpus() -> list[int]:
         if (gpus := os.environ.get("CUDA_VISIBLE_DEVICES")) is not None:
@@ -122,7 +79,7 @@ class CUDAResourcePool(ResourcePool, kind="cuda"):
         with ctx.Manager() as manager:
             gpus = manager.list()
             p = ctx.Process(
-                target=CUDAResourcePool._get_available_gpus_destructive,
+                target=GPUResourcePool._get_available_gpus_destructive,
                 args=(gpus,),
             )
             p.start()
@@ -171,6 +128,99 @@ class CUDAResourcePool(ResourcePool, kind="cuda"):
 
 
 @dataclass
+class CUDAResource(Resource):
+    cuda_devices: list[int]
+
+    def apply(self):
+        logger.debug(f"Setting CUDA devices to {self.cuda_devices}")
+        os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, self.cuda_devices))
+
+
+class CUDAResourcePool(GPUResourcePool, kind="cuda"):
+    def __init__(
+        self,
+        kind: str,
+        n_workers: int,
+        gpus: Sequence[int] | None = None,
+    ) -> None:
+        if gpus is None:
+            gpus = self.get_available_gpus()
+            logger.info(f"Auto-detected the following CUDA devices: {gpus}")
+
+        n_gpus = len(gpus)
+
+        if n_workers >= n_gpus:
+            if n_workers % n_gpus:
+                raise ValueError(
+                    f"The number of workers ({n_workers}) must be divisible by the number of GPUs ({n_gpus})."
+                )
+        else:
+            if n_gpus % n_workers:
+                raise ValueError(
+                    f"The number of workers ({n_workers}) must evenly divide the number of GPUs ({n_gpus})."
+                )
+
+        workers_per_gpu = max(1, n_workers // n_gpus)
+        gpus_per_worker = max(1, n_gpus // n_workers)
+        gpu_groups: list[list[int]] = (
+            np.array(gpus).repeat(workers_per_gpu).reshape(-1, gpus_per_worker).tolist()
+        )
+        if n_workers > 1:
+            logger.debug(
+                f"CUDA will be allocated the following GPU groups: {gpu_groups}"
+            )
+        self.gpu_resources = [CUDAResource(gpus) for gpus in gpu_groups]
+
+    def get(self, index: int) -> CUDAResource:
+        return self.gpu_resources[index]
+
+
+@dataclass
+class EGLResource(Resource):
+    egl_device: int
+
+    def apply(self):
+        logger.debug(f"Setting EGL device ID to {self.egl_device}")
+        os.environ["EGL_DEVICE_ID"] = str(self.egl_device)
+
+
+class EGLDeviceResourcePool(GPUResourcePool, kind="egl"):
+    def __init__(
+        self,
+        kind: str,
+        n_workers: int,
+        gpus: Sequence[int],
+    ) -> None:
+        # TODO: for auto-detecting GPUs, should we pay attention to CUDA_VISIBLE_DEVICES or not?
+        n_gpus = len(gpus)
+
+        if n_workers >= n_gpus:
+            if n_workers % n_gpus:
+                raise ValueError(
+                    f"The number of workers ({n_workers}) must be divisible by the number of GPUs ({n_gpus})."
+                )
+        else:
+            if n_gpus % n_workers:
+                raise ValueError(
+                    f"The number of workers ({n_workers}) must evenly divide the number of GPUs ({n_gpus})."
+                )
+
+        workers_per_gpu = max(1, n_workers // n_gpus)
+        gpus_per_worker = max(1, n_gpus // n_workers)
+        gpus_allocs: list[int] = (
+            np.array(gpus).repeat(workers_per_gpu)[::gpus_per_worker].tolist()
+        )
+        if n_workers > 1:
+            logger.debug(
+                f"EGL contexts will be allocated the following GPUs: {gpus_allocs}"
+            )
+        self.gpu_resources = [EGLResource(gpu) for gpu in gpus_allocs]
+
+    def get(self, index: int) -> EGLResource:
+        return self.gpu_resources[index]
+
+
+@dataclass
 class CPUResource(Resource):
     cpus: list[int]
 
@@ -210,7 +260,7 @@ class CPUResourcePool(ResourcePool, kind="cpu"):
             logger.debug(f"Allocated the following CPU groups: {cpu_groups}")
         self.cpu_resources = [CPUResource(cpus) for cpus in cpu_groups]
 
-    def get(self, index: int) -> Resource:
+    def get(self, index: int) -> CPUResource:
         return self.cpu_resources[index]
 
     @staticmethod
