@@ -194,13 +194,30 @@ class HeadlessRenderDevice(Resource):
     gpu: int
 
     def apply(self):
-        logger.debug(f"Setting EGL device ID to {self.gpu}")
+        logger.debug(
+            f"Setting device for EGL rendering (`EGL_DEVICE_ID`) to {self.gpu}"
+        )
         os.environ["EGL_DEVICE_ID"] = str(self.gpu)
-        logger.debug(f"Setting pyglet headless device to {self.gpu}")
+        # Reference:
+        # https://github.com/mmatl/pyrender/issues/92
+        # https://pyrender.readthedocs.io/en/latest/_modules/pyrender/offscreen.html
+        logger.debug(
+            f"Setting device for pyglet headless rendering (`PYGLET_HEADLESS_DEVICE`) to {self.gpu}"
+        )
         os.environ["PYGLET_HEADLESS_DEVICE"] = str(self.gpu)
+        # reference:
+        # https://pyglet.readthedocs.io/en/latest/programming_guide/options.html#pyglet.options
+        # https://github.com/pyglet/pyglet/issues/51
+        logger.debug(
+            f"Setting device for Mujoco headless rendering (`MUJOCO_EGL_DEVICE_ID`) to {self.gpu}"
+        )
+        os.environ["MUJOCO_EGL_DEVICE_ID"] = str(self.gpu)
+        # reference:
+        # https://github.com/google-deepmind/dm_control/issues/345
+        # https://pytorch.org/rl/reference/generated/knowledge_base/MUJOCO_INSTALLATION.html#common-issues-during-import-or-when-rendering-mujoco-environments
 
 
-class HeadlessRendering(GpuResources, kind="headless_render"):
+class HeadlessRendering(GpuResources, kind="rendering"):
     def __init__(
         self,
         kind: str,

@@ -21,7 +21,7 @@ hydra:
       cpu:
         cpus: [0, 1, 2, 3, 10, 11, 12, 13]  # since auto-detect fails, enumerate all CPUs
       cuda:
-      headless_render:
+      rendering:
       stagger:
         delay: 5
 
