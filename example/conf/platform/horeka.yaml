@@ -11,6 +11,10 @@ hydra:
     timeout_min: 5
     partition: dev_accelerated
     gres: gpu:4
+    setup:
+      - export WANDB_DIR=$TMPDIR/wandb
+      - mkdir -pv $WANDB_DIR
+      - export WANDB_CONSOLE=off
 
     # clusterduck specific options
     parallel_runs_per_node: 2
