@@ -1,0 +1,28 @@
+# python logging configuration for tasks
+manager_logging:
+  version: 1
+  disable_existing_loggers: false
+  formatters:
+    clusterduck:
+      format: "[%(asctime)s][%(name)s][%(levelname)s] - %(message)s"
+  handlers:
+    clusterduck_out:
+      class: logging.StreamHandler
+      level: DEBUG
+      formatter: clusterduck
+      stream: ext://sys.stdout
+    clusterduck_err:
+      class: logging.StreamHandler
+      level: WARNING
+      formatter: clusterduck
+      stream: ext://sys.stderr
+    clusterduck_file:
+      class: logging.FileHandler
+      level: DEBUG
+      formatter: clusterduck
+      # absolute file path
+      filename: ${hydra.sweep.dir}/.clusterduck/%j.log
+  loggers:
+    clusterduck:
+      handlers: ["clusterduck_err", "clusterduck_out", "clusterduck_file"]
+      level: DEBUG

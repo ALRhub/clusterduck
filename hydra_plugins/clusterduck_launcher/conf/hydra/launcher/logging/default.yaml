@@ -1,0 +1,30 @@
+# python logging configuration for tasks
+manager_logging:
+  version: 1
+  disable_existing_loggers: false
+  formatters:
+    clusterduck:
+      format: "[%(asctime)s][clusterduck] %(message)s"
+  handlers:
+    clusterduck_out:
+      class: logging.StreamHandler
+      level: DEBUG
+      formatter: clusterduck
+      stream: ext://sys.stdout
+    clusterduck_err:
+      class: logging.StreamHandler
+      level: WARNING
+      formatter: clusterduck
+      stream: ext://sys.stderr
+  loggers:
+    clusterduck:
+      handlers: ["clusterduck_err", "clusterduck_out"]
+      level: INFO
+      # propagate: False
+worker_logging:
+  version: 1
+  disable_existing_loggers: false
+  loggers:
+    clusterduck:
+      handlers: ["clusterduck_err"]
+      level: INFO
