@@ -12,6 +12,8 @@ hydra:
     partition: dev_accelerated
     gres: gpu:4
     setup:
+      # Create wandb folder in fast, job-local storage: https://www.nhr.kit.edu/userdocs/horeka/filesystems/#tmpdir
+      # NOTE: wandb folder will be deleted after job completion, but by then it will have synced with server
       - export WANDB_DIR=$TMPDIR/wandb
       - mkdir -pv $WANDB_DIR
       - export WANDB_CONSOLE=off
