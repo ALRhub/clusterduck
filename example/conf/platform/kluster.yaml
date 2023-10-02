@@ -19,6 +19,7 @@ hydra:
     parallel_runs_per_node: 4
     resources_config:
       cpu:
+        cpus: [0, 1, 2, 3, 10, 11, 12, 13]
       cuda:
       stagger:
         delay: 5
