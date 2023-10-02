@@ -4,3 +4,6 @@ defaults:
 
 model:
   learning_rate: 2.0e-5
+
+x: 1
+y: 1

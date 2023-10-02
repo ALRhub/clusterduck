@@ -107,3 +107,15 @@ Install additional requirements for development using:
 ```bash
 pip install ".[all]"
 ```
+
+## Optuna
+
+We also added a small example of how to use clusterduck with [optuna](https://optuna.org/). To run the example, install the additional dependencies with:
+```bash
+pip install git+https://github.com/facebookresearch/hydra.git@main#subdirectory='plugins/hydra_optuna_sweeper'
+```
+
+Then run the example with:
+```bash
+python example/train.py --multirun +platform=local_optuna
+```

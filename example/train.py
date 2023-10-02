@@ -24,8 +24,14 @@ def train(cfg: DictConfig) -> None:
     duration = np.random.default_rng().integers(10)
     logger.info(f"Waiting {duration} seconds...")
     time.sleep(duration)
+    logger.info("Waiting finished!")
 
-    logger.info("Job finished!")
+    # Results for instance useful for optuna optimizations:
+    x: float = cfg.x
+    y: float = cfg.y
+
+    return x**2 + y**2
+
 
 
 if __name__ == "__main__":

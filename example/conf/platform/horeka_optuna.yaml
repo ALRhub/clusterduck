@@ -1,0 +1,46 @@
+# @package _global_
+
+defaults:
+  - override /hydra/sweeper: optuna
+  - override /hydra/sweeper/sampler: tpe
+  - override /hydra/launcher: clusterduck_slurm
+  - _self_
+
+parallel_runs_per_node: 4
+
+hydra:
+  mode: MULTIRUN  # needed for launcher to be used
+  launcher:
+    # launcher/cluster specific options
+    timeout_min: 5
+    partition: dev_accelerated
+    gres: gpu:4
+
+    wait_for_completion: true # Needs to be True, otherwise Optuna will not receive the results
+
+    # clusterduck specific options
+    parallel_runs_per_node: ${parallel_runs_per_node}
+    resources_config:
+      cpu:
+      cuda:
+        gpus: [0, 1, 2, 3]  # optional, will auto-detect if left blank
+      stagger:
+        delay: 5
+  sweeper:
+    sampler:
+      seed: 123
+    direction: minimize
+    study_name: sphere
+    storage: null
+    n_trials: 20
+    n_jobs: ${parallel_runs_per_node}
+    #max_failure_rate: 0.0
+    params:
+      x: range(-5.5, 5.5, step=0.5)
+      y: choice(-5 ,0 ,5)
+
+  # disable logging from job to stdout, as this pollutes slurm output
+  job_logging:
+    root:
+      handlers: [file]
+
