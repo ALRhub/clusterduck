@@ -7,7 +7,18 @@ defaults:
 hydra:
   mode: MULTIRUN  # needed for launcher to be used
   launcher:
+    # launcher/cluster specific options
     timeout_min: 5
+    gpus_per_node: 1  # by default, submitit local executor uses 0 gpus
+
+    # clusterduck specific options
     parallel_runs_per_node: 1
     wait_for_completion: True
-    gpus_per_node: 1  # by default, submitit local executor uses 0 gpus
+    resources_config:
+      cpu:
+      cuda:
+
+  # disable logging from job to stdout, as this pollutes slurm output
+  job_logging:
+    root:
+      handlers: [file]

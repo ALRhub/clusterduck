@@ -8,10 +8,16 @@ Install clusterduck with `pip install .`
 pip install .
 ```
 
-An editable install is only allowed if it is strict, using the following command:
+Developers should note that Hydra plugins are not compatible with new PEP 660-style editable installs.
+In order to perform an editable install, either use [compatibility mode](https://setuptools.pypa.io/en/latest/userguide/development_mode.html#legacy-behavior):
+```bash
+pip install -e . --config-settings editable_mode=compat
+```
+or use [strict editable mode](https://setuptools.pypa.io/en/latest/userguide/development_mode.html#strict-editable-installs).
 ```bash
 pip install -e . --config-settings editable_mode=strict
 ```
+Be aware that strict mode installs do not expose new files created in the project until the installation is performed again.
 
 ### Examples
 The example script requires a few additional dependencies. Install with:
@@ -34,17 +40,6 @@ To run the example script on the HoreKa cluster, use:
 python example/train.py --multirun model=convnet,transformer +iteration="range(2)" +platform=horeka
 ```
 
-### Development
-PyCUDA is a helpful tool for working with CUDA devices outside of the context of a machine learning library like pytorch. We recommend installing it with conda:
-```bash
-conda install pycuda
-```
-
-Install additional requirements for development using:
-```bash
-pip install ".[all]"
-```
-
 ## Configuration Options
 This plugin is heavily inspired by the [hydra-submitit-launcher plugin](https://hydra.cc/docs/plugins/submitit_launcher/), and provides all parameters of that original plugin. See their documentation for details about those parameters.
 
@@ -64,10 +59,10 @@ This will depend on the duration of a run, the `parallel_runs_per_node` setting,
 If not specified, all executions will be run in a single job.
 However only `parallel_runs_per_node` of these executions will be running at any given time.
 - **wait_for_completion:**  
-If set to true, the launcher will keep running in your login node until all SLURM jobs before exiting.
+If set to true, the launcher will keep running in your login node until all SLURM jobs have completed before exiting.
 Otherwise it will submit the SLURM jobs into the queue and then exit.
 - **resources_config:**  
-A list of resources that will be divided up among parallel runs within a SLURM job.
+Any resources that must be divided up among parallel runs within a SLURM job.
 Currently available are following options configurable resources:
   - **cpu** This will divide the runs over the available CPUs.
     - Optional argument `cpus` specifies the CPU ids available to the job. Leave blank to auto-detect.
@@ -75,26 +70,40 @@ Currently available are following options configurable resources:
     - Optional argument `gpus` specifies the GPU ids available to the job. Leave blank to auto-detect.
   - **stagger:** This will delay the start of each task by the specified amount of seconds. This can be useful if you want to avoid starting all tasks at the same time, e.g. to avoid overloading the file system.
     - Argument `delay` specifies the delay amount in seconds.
+- **verbose**
+If set to true, additional debug information will be printed to the SLURM job log (related to scheduling runs within a job and allocating resources), and to each hydra run log (related to setting up the resources for the run).
+If you are having difficulties with the plugin, setting this to true might help understand what is going on.
 
 Here an example of a `hydra/launcher` config that uses all of the above options:
 ```yaml
 hydra:
   launcher:
-    # launcher specific options
+    # launcher/cluster specific options
     timeout_min: 5
     partition: dev_accelerated
     gres: gpu:4
     
     # clusterduck specific options
-    parallel_runs_per_node: 2
+    parallel_runs_per_node: 4
     total_runs_per_node: 8
-    wait_for_completion: True
+    wait_for_completion: False
     resources_config:
-      - cpu
-      - cuda:
-          gpus: [0, 1, 2, 3]
-      - stagger:
-          delay: 5
+      cpu:
+      cuda:
+        gpus: [0, 1, 2, 3]  # optional, will auto-detect if left blank
+      stagger:
+        delay: 5
 ```
 
 Further look into the example folder for a working example with multiple example configurations.
+
+### Development
+PyCUDA is a helpful tool for working with CUDA devices outside of the context of a machine learning library like pytorch. We recommend installing it with conda:
+```bash
+conda install pycuda
+```
+
+Install additional requirements for development using:
+```bash
+pip install ".[all]"
+```

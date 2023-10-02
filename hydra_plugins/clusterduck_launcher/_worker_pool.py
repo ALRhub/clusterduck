@@ -1,13 +1,16 @@
 import multiprocessing as mp
 import pickle
 from multiprocessing.connection import Connection, wait
-from typing import Any, Callable, Literal, Mapping, Sequence, TypeVar
+from typing import Any, Callable, Literal, Sequence, TypeVar
 
 import cloudpickle
 
+from ._logging import get_logger
 from ._resources import Resource, ResourcePool
 
 ReturnType = TypeVar("ReturnType")
+
+logger = get_logger(__name__)
 
 
 class WorkerPool:
@@ -26,13 +29,10 @@ class WorkerPool:
         target: Callable,
         resources: Sequence[Resource],
         pipe: Connection,
-        kwargs: Mapping[str, Any],
+        **kwargs: Any,
     ):
-        for resource in resources:
-            resource.apply()
-
         try:
-            ret = target(**kwargs)
+            ret = target(resources=resources, **kwargs)
             pipe.send(cloudpickle.dumps(ret))
 
         except Exception as e:
@@ -43,7 +43,7 @@ class WorkerPool:
 
     def execute(
         self,
-        target: Callable[..., ReturnType],
+        target_fn: Callable[..., ReturnType],
         kwargs_list: Sequence[dict],
     ) -> list[ReturnType]:
         ctx = mp.get_context(self.start_method)
@@ -57,12 +57,16 @@ class WorkerPool:
             process = ctx.Process(
                 target=self.worker,
                 kwargs=dict(
-                    target=target,
+                    target=target_fn,
                     resources=resources,
                     pipe=worker_pipes[i],
-                    kwargs=kwargs_list[i],
+                    **kwargs_list[i],
                 ),
             )
+            logger.info(
+                f"Starting process #{i} in slot #{i} with arguments: {kwargs_list[i]}"
+            )
+            logger.debug(f"This process will be given resources: {resources}")
             process.start()
             processes.append(process)
 
@@ -78,11 +82,18 @@ class WorkerPool:
                 processes[worker_id].join()
 
                 if not manager_pipes[worker_id].poll():
+                    logger.error(
+                        f"Process {submitted_overrides - 1} crashed with no return value."
+                    )
                     raise RuntimeError("Worker process sent no return value.")
                 result = pickle.loads(manager_pipes[worker_id].recv())
 
                 if isinstance(result, Exception):
+                    logger.error(
+                        f"Process {submitted_overrides - 1} completed with an uncaught exception."
+                    )
                     raise result
+                logger.debug(f"Process {submitted_overrides - 1} completed normally.")
                 results.append(result)
 
                 resources = [
@@ -92,12 +103,16 @@ class WorkerPool:
                 processes[worker_id] = ctx.Process(
                     target=self.worker,
                     kwargs=dict(
-                        target=target,
+                        target=target_fn,
                         resources=resources,
                         pipe=worker_pipes[worker_id],
-                        kwargs=kwargs_list[submitted_overrides],
+                        **kwargs_list[submitted_overrides],
                     ),
                 )
+                logger.info(
+                    f"Starting process #{submitted_overrides} in slot #{worker_id} with arguments: {kwargs_list[submitted_overrides]}"
+                )
+                logger.debug(f"This process will be given resources: {resources}")
                 processes[worker_id].start()
                 submitted_overrides += 1
                 if submitted_overrides == len(kwargs_list):
@@ -107,6 +122,7 @@ class WorkerPool:
             process.join()
 
             if not manager_pipes[worker_id].poll():
+                # TODO: maybe do not throw an Exception here, as this stops job
                 raise RuntimeError("Worker process sent no return value.")
             result = pickle.loads(manager_pipes[worker_id].recv())
 
