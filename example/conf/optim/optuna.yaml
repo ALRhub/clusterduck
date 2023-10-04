@@ -1,0 +1,24 @@
+# @package _global_
+
+defaults:
+  - override /hydra/sweeper: optuna
+  - override /hydra/sweeper/sampler: tpe
+  - _self_
+
+hydra:
+  mode: MULTIRUN  # needed for launcher to be used
+  launcher:
+    # clusterduck specific options
+    wait_for_completion: True  # Optuna needs to wait to receive the results of each run
+  sweeper:
+    sampler:
+      seed: 123
+    direction: minimize
+    study_name: sphere
+    storage: null
+    n_trials: 20
+    n_jobs: ${hydra.launcher.parallel_runs_per_node}
+    #max_failure_rate: 0.0
+    params:
+      x: range(-5.5, 5.5, step=0.5)
+      y: choice(-5 ,0 ,5)

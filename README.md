@@ -108,14 +108,17 @@ Install additional requirements for development using:
 pip install ".[all]"
 ```
 
-## Optuna
+## Other Sweepers
 
-We also added a small example of how to use clusterduck with [optuna](https://optuna.org/). To run the example, install the additional dependencies with:
+clusterduck plays nicely with other Hydra sweeper plugins, for example [Optuna](https://optuna.org/).
+You can find a small example of how to use clusterduck with Optuna in `example/conf/optim/optuna.yaml`.
+
+To run the example, install the additional dependencies with:
 ```bash
-pip install git+https://github.com/facebookresearch/hydra.git@main#subdirectory='plugins/hydra_optuna_sweeper'
+pip install hydra-optuna-sweeper
 ```
 
 Then run the example with:
 ```bash
-python example/train.py --multirun +platform=local_optuna
+python example/train.py +optim=optuna +platform=local_optuna
 ```
