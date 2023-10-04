@@ -118,7 +118,12 @@ To run the example, install the additional dependencies with:
 pip install hydra-optuna-sweeper
 ```
 
-Then run the example with:
+To run the example with the default Hydra launcher, run:
 ```bash
-python example/train.py +optim=optuna +platform=local_optuna
+python example/train.py +optim=optuna
+```
+
+To run the example with clusterduck, run:
+```bash
+python example/train.py +optim=optuna_clusterduck +platform=slurm_debug
 ```

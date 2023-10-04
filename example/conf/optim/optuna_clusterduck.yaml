@@ -1,0 +1,12 @@
+# @package _global_
+
+defaults:
+  - /optim/optuna@_here_
+  - _self_
+
+hydra:
+  launcher:
+    # clusterduck specific options
+    wait_for_completion: True  # Optuna needs to wait to receive the results of each run
+  sweeper:
+    n_jobs: ${hydra.launcher.parallel_runs_per_node}
