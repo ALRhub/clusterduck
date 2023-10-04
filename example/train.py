@@ -26,9 +26,9 @@ def train(cfg: DictConfig) -> float:
     time.sleep(duration)
 
     # Results for instance useful for optuna optimizations:
-    x: float = cfg.x
-    y: float = cfg.y
-    result = x**2 + y**2
+    a: float = cfg.a
+    b: float = cfg.b
+    result = a**2 + b**2
 
     logger.info(f"Job finished with {result=}!")
 

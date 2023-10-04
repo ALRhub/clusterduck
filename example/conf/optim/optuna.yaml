@@ -6,7 +6,7 @@ defaults:
   - _self_
 
 hydra:
-  mode: MULTIRUN  # needed for launcher to be used
+  mode: MULTIRUN  # needed for sweeper to be used
   sweeper:
     sampler:
       seed: 123
@@ -16,5 +16,5 @@ hydra:
     n_trials: 20
     #max_failure_rate: 0.0
     params:
-      x: range(-5.5, 5.5, step=0.5)
-      y: choice(-5 ,0 ,5)
+      a: range(-5.5, 5.5, step=0.5)
+      b: choice(-5 ,0 ,5)
