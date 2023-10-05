@@ -222,11 +222,11 @@ class HeadlessRendering(GpuResources, kind="rendering"):
         self,
         kind: str,
         n_workers: int,
-        gpus: Sequence[int],
+        gpus: Sequence[int] | None = None,
     ) -> None:
         if gpus is None:
             gpus = self.get_available_gpus()
-            logger.info(f"Auto-detected the following CUDA devices: {gpus}")
+            logger.info(f"Auto-detected the following GPU devices: {gpus}")
 
         n_gpus = len(gpus)
 
