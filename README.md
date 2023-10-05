@@ -64,9 +64,11 @@ Otherwise it will submit the SLURM jobs into the queue and then exit.
 - **resources_config:**  
 Any resources that must be divided up among parallel runs within a SLURM job.
 Currently available are following options configurable resources:
-  - **cpu** This will divide the runs over the available CPUs.
+  - **cpu** Allocates CPUs evenly across parallel runs.
     - Optional argument `cpus` specifies the CPU ids available to the job. Leave blank to auto-detect.
-  - **cuda** This will divide the runs over the available GPUs. With this you can specify the GPUs that will be used for the tasks.
+  - **cuda** Allocates GPUs for CUDA (e.g. Pytorch, TensorFlow, JAX, etc.) evenly across parallel runs.
+    - Optional argument `gpus` specifies the GPU ids available to the job. Leave blank to auto-detect.
+  - **rendering** Allocates GPUs for headless rendering with EGL evenly across parallel runs. This is useful for e.g. image-based training on Mujoco environments, SOFA environments, headless rendering with pyglet, etc.
     - Optional argument `gpus` specifies the GPU ids available to the job. Leave blank to auto-detect.
   - **stagger:** This will delay the start of each task by the specified amount of seconds. This can be useful if you want to avoid starting all tasks at the same time, e.g. to avoid overloading the file system.
     - Argument `delay` specifies the delay amount in seconds.
@@ -74,23 +76,28 @@ Currently available are following options configurable resources:
 If set to true, additional debug information will be printed to the SLURM job log (related to scheduling runs within a job and allocating resources), and to each hydra run log (related to setting up the resources for the run).
 If you are having difficulties with the plugin, setting this to true might help understand what is going on.
 
-Here an example of a `hydra/launcher` config that uses all of the above options:
+Here an example of a `hydra/launcher` config for Horeka that uses some of the above options:
 ```yaml
 hydra:
   launcher:
     # launcher/cluster specific options
     timeout_min: 5
-    partition: dev_accelerated
+    partition: accelerated
     gres: gpu:4
+    setup:
+      # Create wandb folder in fast, job-local storage: https://www.nhr.kit.edu/userdocs/horeka/filesystems/#tmpdir
+      # NOTE: wandb folder will be deleted after job completion, but by then it will have synced with server
+      - export WANDB_DIR=$TMPDIR/wandb
+      - mkdir -pv $WANDB_DIR
+      - export WANDB_CONSOLE=off
     
     # clusterduck specific options
     parallel_runs_per_node: 4
     total_runs_per_node: 8
-    wait_for_completion: False
     resources_config:
       cpu:
       cuda:
-        gpus: [0, 1, 2, 3]  # optional, will auto-detect if left blank
+      rendering:
       stagger:
         delay: 5
 ```

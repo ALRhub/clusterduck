@@ -47,9 +47,10 @@ class Resource:
 class ResourcePool:
     _subclasses: dict[str, type[ResourcePool]] = {}
 
-    def __init_subclass__(cls, *, kind: str, **kwargs) -> None:
+    def __init_subclass__(cls, *, kind: str | None = None, **kwargs) -> None:
         super().__init_subclass__(**kwargs)
-        cls._subclasses[kind] = cls
+        if kind is not None:
+            cls._subclasses[kind] = cls
 
     def __new__(cls, *args, kind: str, **kwargs) -> ResourcePool:
         try:
@@ -62,16 +63,94 @@ class ResourcePool:
         raise NotImplementedError
 
 
+class GpuResources(ResourcePool):
+    @staticmethod
+    def get_available_gpus() -> list[int]:
+        if (gpus := os.environ.get("CUDA_VISIBLE_DEVICES")) is not None:
+            # SLURM sets CUDA_VISIBLE_DEVICES for each job and each step
+            # https://slurm.schedmd.com/gres.html#GPU_Management
+            logger.debug(
+                "Using `CUDA_VISIBLE_DEVICES` to determine the available GPU resources."
+            )
+            return [int(gpu) for gpu in gpus.split(",")]
+
+        if (gpus := os.environ.get("SLURM_JOB_GPUS")) is not None:
+            logger.debug(
+                "Using `SLURM_JOB_GPUS` to determine the available GPU resources."
+            )
+            return [int(gpu) for gpu in gpus.split(",")]
+
+        logger.debug(
+            "Trying to detect number of gpus using an ML library (e.g. pytorch)"
+        )
+
+        import multiprocessing as mp
+
+        ctx = mp.get_context("fork")
+        with ctx.Manager() as manager:
+            gpus = manager.list()
+            p = ctx.Process(
+                target=GpuResources._get_available_gpus_destructive,
+                args=(gpus,),
+            )
+            p.start()
+            p.join()
+
+            if gpus and gpus[0] is None:
+                raise RuntimeError(
+                    "Either pycuda, Pytorch, or TensorFlow must be installed in order to auto-detect GPU resources."
+                )
+
+            return list(gpus)
+
+    @staticmethod
+    def _get_available_gpus_destructive(gpus: list[int | None]) -> None:
+        """These imports modify program state, so we do them in a separate process."""
+        try:
+            import pycuda.autoinit
+            import pycuda.driver as cuda
+
+            n_gpus = cuda.Device.count()
+            logger.debug(f"Found {n_gpus} GPUs using pycuda")
+            gpus.extend(range(n_gpus))
+            return
+        except ImportError:
+            pass
+
+        try:
+            import torch
+
+            n_gpus = torch.cuda.device_count()
+            logger.debug(f"Found {n_gpus} GPUs using Pytorch")
+            gpus.extend(range(n_gpus))
+            return
+        except ImportError:
+            pass
+
+        try:
+            import tensorflow as tf
+
+            devices = tf.config.list_physical_devices("GPU")
+            logger.debug(f"Found the following GPUs using TensorFlow: {devices}")
+            gpus.extend(int(device.name) for device in devices)
+            return
+        except ImportError:
+            pass
+
+        # None signals that auto-detection of GPUs has failed
+        gpus.append(None)
+
+
 @dataclass
-class CUDAResource(Resource):
-    cuda_devices: list[int]
+class CudaDevices(Resource):
+    gpus: list[int]
 
     def apply(self):
-        logger.debug(f"Setting CUDA devices to {self.cuda_devices}")
-        os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, self.cuda_devices))
+        logger.debug(f"Setting CUDA devices to {self.gpus}")
+        os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, self.gpus))
 
 
-class CUDAResourcePool(ResourcePool, kind="cuda"):
+class Cuda(GpuResources, kind="cuda"):
     def __init__(
         self,
         kind: str,
@@ -101,77 +180,84 @@ class CUDAResourcePool(ResourcePool, kind="cuda"):
             np.array(gpus).repeat(workers_per_gpu).reshape(-1, gpus_per_worker).tolist()
         )
         if n_workers > 1:
-            logger.debug(f"Allocated the following GPU groups: {gpu_groups}")
-        self.gpu_resources = [CUDAResource(gpus) for gpus in gpu_groups]
+            logger.debug(
+                f"CUDA will be allocated the following GPU groups: {gpu_groups}"
+            )
+        self.gpu_resources = [CudaDevices(gpus) for gpus in gpu_groups]
 
-    def get(self, index: int) -> Resource:
+    def get(self, index: int) -> CudaDevices:
         return self.gpu_resources[index]
-
-    @staticmethod
-    def get_available_gpus() -> list[int]:
-        if (gpus := os.environ.get("CUDA_VISIBLE_DEVICES")) is not None:
-            return [int(gpu) for gpu in gpus.split(",")]
-
-        logger.debug(
-            "Trying to detect number of gpus using an ML library (e.g. pytorch)"
-        )
-
-        import multiprocessing as mp
-
-        ctx = mp.get_context("fork")
-        with ctx.Manager() as manager:
-            gpus = manager.list()
-            p = ctx.Process(
-                target=CUDAResourcePool._get_available_gpus_destructive,
-                args=(gpus,),
-            )
-            p.start()
-            p.join()
-
-            if gpus and isinstance(gpus[0], ImportError):
-                raise gpus[0]
-
-            return list(gpus)
-
-    @staticmethod
-    def _get_available_gpus_destructive(gpus: list[int]) -> None:
-        """These imports modify program state, so we do them in a separate process."""
-        try:
-            import torch
-
-            gpus.extend(range(torch.cuda.device_count()))
-            return
-        except ImportError:
-            pass
-
-        try:
-            import tensorflow as tf
-
-            gpus.extend(
-                int(device.name) for device in tf.config.list_physical_devices("GPU")
-            )
-            return
-        except ImportError:
-            pass
-
-        try:
-            import pycuda.autoinit
-            import pycuda.driver as cuda
-
-            gpus.extend(range(cuda.Device.count()))
-            return
-        except ImportError:
-            pass
-
-        gpus.append(
-            ImportError(
-                "Either PyTorch, Tensorflow or PyCUDA must be installed to use CUDAResource"
-            )
-        )
 
 
 @dataclass
-class CPUResource(Resource):
+class HeadlessRenderDevice(Resource):
+    gpu: int
+
+    def apply(self):
+        logger.debug(
+            f"Setting device for EGL rendering (`EGL_DEVICE_ID`) to {self.gpu}"
+        )
+        os.environ["EGL_DEVICE_ID"] = str(self.gpu)
+        # Reference:
+        # https://github.com/mmatl/pyrender/issues/92
+        # https://pyrender.readthedocs.io/en/latest/_modules/pyrender/offscreen.html
+        logger.debug(
+            f"Setting device for pyglet headless rendering (`PYGLET_HEADLESS_DEVICE`) to {self.gpu}"
+        )
+        os.environ["PYGLET_HEADLESS_DEVICE"] = str(self.gpu)
+        # reference:
+        # https://pyglet.readthedocs.io/en/latest/programming_guide/options.html#pyglet.options
+        # https://github.com/pyglet/pyglet/issues/51
+        logger.debug(
+            f"Setting device for Mujoco headless rendering (`MUJOCO_EGL_DEVICE_ID`) to {self.gpu}"
+        )
+        os.environ["MUJOCO_EGL_DEVICE_ID"] = str(self.gpu)
+        # reference:
+        # https://github.com/google-deepmind/dm_control/issues/345
+        # https://pytorch.org/rl/reference/generated/knowledge_base/MUJOCO_INSTALLATION.html#common-issues-during-import-or-when-rendering-mujoco-environments
+
+
+class HeadlessRendering(GpuResources, kind="rendering"):
+    def __init__(
+        self,
+        kind: str,
+        n_workers: int,
+        gpus: Sequence[int] | None = None,
+    ) -> None:
+        if gpus is None:
+            gpus = self.get_available_gpus()
+            logger.info(f"Auto-detected the following GPU devices: {gpus}")
+
+        n_gpus = len(gpus)
+
+        if n_workers >= n_gpus:
+            if n_workers % n_gpus:
+                raise ValueError(
+                    f"The number of workers ({n_workers}) must be divisible by the number of GPUs ({n_gpus})."
+                )
+        else:
+            if n_gpus % n_workers:
+                raise ValueError(
+                    f"The number of workers ({n_workers}) must evenly divide the number of GPUs ({n_gpus})."
+                )
+
+        workers_per_gpu = max(1, n_workers // n_gpus)
+        gpus_per_worker = max(1, n_gpus // n_workers)
+        gpus_allocs: list[int] = (
+            np.array(gpus).repeat(workers_per_gpu)[::gpus_per_worker].tolist()
+        )
+        if n_workers > 1:
+            logger.debug(
+                f"EGL contexts will be allocated the following GPUs: {gpus_allocs}"
+            )
+        self.gpu_resources = [HeadlessRenderDevice(gpu) for gpu in gpus_allocs]
+
+    def get(self, index: int) -> HeadlessRenderDevice:
+        return self.gpu_resources[index]
+
+
+@dataclass
+class CpuGroup(Resource):
     cpus: list[int]
 
     def apply(self):
@@ -179,7 +265,7 @@ class CPUResource(Resource):
         psutil.Process().cpu_affinity(self.cpus)
 
 
-class CPUResourcePool(ResourcePool, kind="cpu"):
+class Cpus(ResourcePool, kind="cpu"):
     def __init__(
         self,
         kind: str,
@@ -208,9 +294,9 @@ class CPUResourcePool(ResourcePool, kind="cpu"):
         )
         if n_workers > 1:
             logger.debug(f"Allocated the following CPU groups: {cpu_groups}")
-        self.cpu_resources = [CPUResource(cpus) for cpus in cpu_groups]
+        self.cpu_resources = [CpuGroup(cpus) for cpus in cpu_groups]
 
-    def get(self, index: int) -> Resource:
+    def get(self, index: int) -> CpuGroup:
         return self.cpu_resources[index]
 
     @staticmethod
