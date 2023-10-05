@@ -128,7 +128,7 @@ class BaseClusterDuckLauncher(Launcher):
 
     def __call__(
         self,
-        sweep_overrides: List[str],
+        sweep_overrides: Sequence[str],
         job_dir_key: str,
         job_num: int,
         job_id: str,
@@ -151,7 +151,7 @@ class BaseClusterDuckLauncher(Launcher):
         Singleton.set_state(singleton_state)
         setup_globals()
         sweep_config = self.hydra_context.config_loader.load_sweep_config(
-            self.config, sweep_overrides
+            self.config, list(sweep_overrides)
         )
 
         with open_dict(sweep_config.hydra.job) as job:
@@ -274,7 +274,7 @@ class BaseClusterDuckLauncher(Launcher):
             results: list[JobReturn] = []
             for job_num, override in zip(job_nums, job_overrides):
                 sweep_config = self.hydra_context.config_loader.load_sweep_config(
-                    self.config, override
+                    self.config, list(override)
                 )
 
                 with open_dict(sweep_config.hydra.job) as job:

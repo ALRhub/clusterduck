@@ -12,7 +12,7 @@ logger = logging.getLogger("training")
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")
-def train(cfg: DictConfig) -> None:
+def train(cfg: DictConfig) -> float:
     logger.info(
         f"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', '(ALL)')}"
     )
@@ -25,7 +25,14 @@ def train(cfg: DictConfig) -> None:
     logger.info(f"Waiting {duration} seconds...")
     time.sleep(duration)
 
-    logger.info("Job finished!")
+    # Results for instance useful for optuna optimizations:
+    a: float = cfg.a
+    b: float = cfg.b
+    result = a**2 + b**2
+
+    logger.info(f"Job finished with {result=}!")
+
+    return result
 
 
 if __name__ == "__main__":
