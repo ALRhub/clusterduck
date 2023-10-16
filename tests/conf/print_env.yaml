@@ -1,0 +1,15 @@
+defaults:
+  - _self_
+
+env_vars:
+  - HOSTNAME
+  - CUDA_VISIBLE_DEVICES
+  - SLURM_JOB_GPUS
+
+cpu:
+  detect_w_psutil: True
+  detect_w_os: True
+
+gpu:
+  detect_w_pytorch: True
+  detect_w_pycuda: True
