@@ -32,6 +32,7 @@ class WorkerPool:
         **kwargs: Any,
     ):
         try:
+            print("Worker started")
             ret = target(resources=resources, **kwargs)
             pipe.send(cloudpickle.dumps(ret))
 
