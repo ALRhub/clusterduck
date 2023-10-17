@@ -51,10 +51,10 @@ class BaseClusterDuckLauncher(Launcher):
                 v = OmegaConf.to_container(v, resolve=True)
             self.params[k] = v
 
-        self.config: Optional[bytes] = None
+        self.config: Optional[DictConfig] = None
         self.task_function: Optional[WrappedTaskFunction] = None
         self.sweep_configs: Optional[TaskFunction] = None
-        self.hydra_context: Optional[bytes] = None
+        self.hydra_context: Optional[HydraContext] = None
 
     def setup(
         self,
@@ -63,12 +63,10 @@ class BaseClusterDuckLauncher(Launcher):
         task_function: TaskFunction,
         config: DictConfig,
     ) -> None:
-        import cloudpickle
-
         from ._wrapped_task import WrappedTaskFunction
 
-        self.config = cloudpickle.dumps(config)
-        self.hydra_context = cloudpickle.dumps(hydra_context)
+        self.config = config
+        self.hydra_context = hydra_context
         self.task_function = WrappedTaskFunction(task_function)
 
     def run_workers(
@@ -91,7 +89,10 @@ class BaseClusterDuckLauncher(Launcher):
 
         configure_log(self.verbose)
 
+        # singleton state contains resolvers defined within functions, and so must be
+        # serialized with cloudpickle
         singleton_state = cloudpickle.dumps(singleton_state)
+
         kwargs_list = [
             dict(
                 sweep_overrides=sweep_overrides,
@@ -139,7 +140,7 @@ class BaseClusterDuckLauncher(Launcher):
         singleton_state: Dict[type, Singleton],
         resources: Sequence[Resource],
     ) -> JobReturn:
-        """This method runs inside the SLURM job inside a fresh process forked by `run_workers`.
+        """This method runs inside the SLURM job inside a fresh process spawned by `run_workers`.
         When this method starts, no logging of any kind has been configured. Hydra job logging
         is configured inside `run_job`, so we delay important operations like applying resource
         configurations and unpickling the task function until the __call__ method of the
@@ -156,10 +157,8 @@ class BaseClusterDuckLauncher(Launcher):
         assert self.config is not None
         assert self.task_function is not None
 
+        # configure logging again, since it is not inherited from parent process
         configure_log(self.verbose)
-
-        self.hydra_context = pickle.loads(self.hydra_context)
-        self.config = pickle.loads(self.config)
 
         Singleton.set_state(pickle.loads(singleton_state))
         setup_globals()
@@ -199,12 +198,10 @@ class BaseClusterDuckLauncher(Launcher):
 
         # lazy import to ensure plugin discovery remains fast
         import math
-        import pickle
 
         import submitit
 
         assert self.config is not None
-        config = pickle.loads(self.config)
 
         total_runs_per_node = self.total_runs_per_node or len(job_overrides)
 
@@ -236,12 +233,12 @@ class BaseClusterDuckLauncher(Launcher):
 
         log.info(
             f"Clusterduck '{self._EXECUTOR}' sweep output dir : "
-            f"{config.hydra.sweep.dir}"
+            f"{self.config.hydra.sweep.dir}"
         )
-        sweep_dir = Path(str(config.hydra.sweep.dir))
+        sweep_dir = Path(str(self.config.hydra.sweep.dir))
         sweep_dir.mkdir(parents=True, exist_ok=True)
-        if "mode" in config.hydra.sweep:
-            mode = int(str(config.hydra.sweep.mode), 8)
+        if "mode" in self.config.hydra.sweep:
+            mode = int(str(self.config.hydra.sweep.mode), 8)
             os.chmod(sweep_dir, mode=mode)
 
         job_params: List[Any] = []
@@ -284,14 +281,12 @@ class BaseClusterDuckLauncher(Launcher):
             assert self.config is not None
             assert self.task_function is not None
 
-            self.hydra_context = pickle.loads(self.hydra_context)
-
             no_op = lambda config: None
             job_nums = range(initial_job_idx, initial_job_idx + len(job_overrides))
             results: list[JobReturn] = []
             for job_num, override in zip(job_nums, job_overrides):
                 sweep_config = self.hydra_context.config_loader.load_sweep_config(
-                    config, list(override)
+                    self.config, list(override)
                 )
 
                 with open_dict(sweep_config.hydra.job) as job:

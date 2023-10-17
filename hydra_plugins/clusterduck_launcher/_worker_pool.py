@@ -32,7 +32,6 @@ class WorkerPool:
         **kwargs: Any,
     ):
         try:
-            print("Worker started")
             ret = target(resources=resources, **kwargs)
             pipe.send(cloudpickle.dumps(ret))
 
@@ -64,8 +63,9 @@ class WorkerPool:
                     **kwargs_list[i],
                 ),
             )
-            logger.info(
-                f"Starting process #{i} in slot #{i} with arguments: {kwargs_list[i]}"
+            logger.info(f"Starting process #{i} in slot #{i}.")
+            logger.debug(
+                f"This process will be passed these arguments: {kwargs_list[i]}"
             )
             logger.debug(f"This process will be given resources: {resources}")
             process.start()

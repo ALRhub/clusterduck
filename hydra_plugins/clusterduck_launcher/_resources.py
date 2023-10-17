@@ -52,7 +52,14 @@ class ResourcePool:
         if kind is not None:
             cls._subclasses[kind] = cls
 
-    def __new__(cls, *args, kind: str, **kwargs) -> ResourcePool:
+    def __new__(cls, *args, kind: str | None = None, **kwargs) -> ResourcePool:
+        if kind is None:
+            # called during unpickling with no arguments, but cls is the class we need to create
+            if cls is ResourcePool:
+                raise TypeError(
+                    "ResourcePool.__new__() missing 1 required keyword-only argument: 'kind'"
+                )
+            return super().__new__(cls)
         try:
             subcls = cls._subclasses[kind]
         except KeyError:

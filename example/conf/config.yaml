@@ -1,13 +1,9 @@
 defaults:
   - model: convnet
-  - platform: slurm_debug
   - _self_
 
 model:
   learning_rate: 2.0e-5
-hydra:
-  launcher:
-    verbose: True
 
 a: 1
 b: 1
