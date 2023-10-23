@@ -8,7 +8,7 @@ hydra:
   mode: MULTIRUN  # needed for launcher to be used
   launcher:
     # launcher/cluster specific options
-    timeout_min: 5
+    timeout_min: ???
     partition: dev_accelerated
     gres: gpu:4
     setup:
