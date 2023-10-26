@@ -8,7 +8,7 @@ from hydra.core.config_store import ConfigStore
 class BaseQueueConf:
     """Configuration shared by all executors"""
 
-    submitit_folder: str = "${hydra.sweep.dir}/.submitit/%j"
+    submitit_folder: str = "${hydra.sweep.dir}/submitit/%j"
 
     # maximum time for the job in minutes
     timeout_min: int = 60

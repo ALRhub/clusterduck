@@ -8,7 +8,7 @@ hydra:
   mode: MULTIRUN  # needed for launcher to be used
   launcher:
     # launcher/cluster specific options
-    timeout_min: 5
+    timeout_min: ???
     gres: gpu:4  # we want all GPUs in a node
     mem_per_cpu: 15000  # in MB (* 8 cores in use = 120GB)
     # exclude: node[4-5]  # e.g. do not allocate on these nodes because the RTX2080 doesn't have enough VRAM
@@ -17,6 +17,7 @@ hydra:
 
     # clusterduck specific options
     parallel_runs_per_node: 4
+    total_runs_per_node: null  # optional. None puts all runs into one slurm job
     resources_config:
       cpu:
         cpus: [0, 1, 2, 3, 10, 11, 12, 13]  # since auto-detect fails, enumerate all CPUs

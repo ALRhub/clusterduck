@@ -8,7 +8,7 @@ hydra:
   mode: MULTIRUN  # needed for launcher to be used
   launcher:
     # launcher/cluster specific options
-    timeout_min: 5
+    timeout_min: ???
     partition: dev_accelerated
     gres: gpu:4
     setup:
@@ -19,7 +19,8 @@ hydra:
       - export WANDB_CONSOLE=off
 
     # clusterduck specific options
-    parallel_runs_per_node: 2
+    parallel_runs_per_node: 4
+    total_runs_per_node: null  # optional. None puts all runs into one slurm job
     resources_config:
       cpu:
       cuda:

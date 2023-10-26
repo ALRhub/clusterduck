@@ -8,7 +8,7 @@ hydra:
   mode: MULTIRUN  # needed for launcher to be used
   launcher:
     # launcher/cluster specific options
-    timeout_min: 5
+    timeout_min: ???
     gpus_per_node: 1  # by default, submitit local executor uses 0 gpus
 
     # clusterduck specific options
