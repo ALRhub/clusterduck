@@ -1,4 +1,7 @@
 defaults:
+  - platform: null
+  - optim: null
+  - optional platform_optim: clusterduck_${optim}
   - model: convnet
   - _self_
 

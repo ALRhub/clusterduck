@@ -1,9 +1,5 @@
 # @package _global_
 
-defaults:
-  - optuna
-  - _self_
-
 hydra:
   launcher:
     # clusterduck specific options
