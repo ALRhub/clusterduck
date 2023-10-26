@@ -17,6 +17,7 @@ hydra:
 
     # clusterduck specific options
     parallel_runs_per_node: 4
+    total_runs_per_node: null  # optional. None puts all runs into one slurm job
     resources_config:
       cpu:
         cpus: [0, 1, 2, 3, 10, 11, 12, 13]  # since auto-detect fails, enumerate all CPUs
