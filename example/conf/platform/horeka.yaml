@@ -24,6 +24,7 @@ hydra:
     resources_config:
       cpu:
       cuda:
+        gpus: [0, 1, 2, 3]  # Auto-detect has failed on Horeka accelerated nodes. Enumerate all GPUs manually.
       rendering:
       stagger:
         delay: 5
