@@ -32,6 +32,8 @@ class WorkerPool:
         **kwargs: Any,
     ):
         try:
+            if self.start_method == "spawn":
+                resources = cloudpickle.loads(resources)
             ret = target(resources=resources, **kwargs)
             pipe.send(cloudpickle.dumps(ret))
 
@@ -53,6 +55,12 @@ class WorkerPool:
 
         for i in range(n_processes):
             resources = [resource_pool.get(i) for resource_pool in self.resource_pools]
+
+            if self.start_method == "spawn":
+                # This is a workaround for the fact that cloudpickle does not
+                # support sending lambdas over multiprocessing pipes.
+                # See
+                resources = cloudpickle.dumps(resources)
 
             process = ctx.Process(
                 target=self.worker,
