@@ -34,7 +34,7 @@ class WorkerPool:
         try:
             if self.start_method == "spawn":
                 # resources = cloudpickle.loads(resources)
-                target = cloudpickle.loads(target)
+                #target = cloudpickle.loads(target)
                 kwargs = {key: cloudpickle.loads(value) for key, value in kwargs.items()}
 
             ret = target(resources=resources, **kwargs)
@@ -65,7 +65,7 @@ class WorkerPool:
                 # support sending lambdas over multiprocessing pipes.
                 # See
                 # resources = cloudpickle.dumps(resources)
-                target_fn = cloudpickle.dumps(target_fn)
+                # target_fn = cloudpickle.dumps(target_fn)
                 kwargs = {key: cloudpickle.dumps(value) for key, value in kwargs.items()}
 
             # print(f"resources: {type(resources)}")
