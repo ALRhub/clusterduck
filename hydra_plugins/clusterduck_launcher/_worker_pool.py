@@ -35,7 +35,8 @@ class WorkerPool:
             if self.start_method == "spawn":
                 resources = cloudpickle.loads(resources)
                 target = cloudpickle.loads(target)
-                kwargs = cloudpickle.loads(kwargs)
+                kwargs = {key: cloudpickle.loads(value) for key, value in kwargs.items()}
+
             ret = target(resources=resources, **kwargs)
             pipe.send(cloudpickle.dumps(ret))
 
@@ -58,18 +59,19 @@ class WorkerPool:
         for i in range(n_processes):
             resources = [resource_pool.get(i) for resource_pool in self.resource_pools]
 
+            kwargs = kwargs_list[i]
             if self.start_method == "spawn":
                 # This is a workaround for the fact that cloudpickle does not
                 # support sending lambdas over multiprocessing pipes.
                 # See
                 resources = cloudpickle.dumps(resources)
                 target_fn = cloudpickle.dumps(target_fn)
-                kwargs_list = cloudpickle.dumps(kwargs_list)
+                kwargs = {key: cloudpickle.dumps(value) for key, value in kwargs.items()}
 
-            print(f"resources: {type(resources)}")
-            print(f"target_fn: {type(target_fn)}")
-            for key, value in kwargs_list[i].items():
-                print(f"{key}: {type(value)}")
+            # print(f"resources: {type(resources)}")
+            # print(f"target_fn: {type(target_fn)}")
+            # for key, value in kwargs_list.items():
+            #     print(f"{key}: {type(value)}")
 
 
             process = ctx.Process(
@@ -78,7 +80,7 @@ class WorkerPool:
                     target=target_fn,
                     resources=resources,
                     pipe=worker_pipes[i],
-                    **kwargs_list[i],
+                    **kwargs,
                 ),
             )
             logger.info(
