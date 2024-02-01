@@ -64,6 +64,12 @@ class WorkerPool:
                 resources = cloudpickle.dumps(resources)
                 target_fn = cloudpickle.dumps(target_fn)
 
+            print(f"resources: {type(resources)}")
+            print(f"target_fn: {type(target_fn)}")
+            for key, value in kwargs_list[i].items():
+                print(f"{key}: {type(value)}")
+
+
             process = ctx.Process(
                 target=self.worker,
                 kwargs=dict(
