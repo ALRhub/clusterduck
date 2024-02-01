@@ -1,0 +1,29 @@
+# @package _global_
+
+defaults:
+  - override /hydra/launcher: clusterduck_slurm
+  - _self_
+
+hydra:
+  mode: MULTIRUN  # needed for launcher to be used
+  launcher:
+    # launcher/cluster specific options
+    timeout_min: 5
+    partition:
+    gres: gpu:1
+
+    # clusterduck specific options
+    parallel_runs_per_node: 1
+
+    start_method: spawn
+    resources_config:
+      cpu:
+      cuda:
+        gpus: [0]  # optional, will auto-detect if left blank
+      stagger:
+        delay: 5
+
+  # disable logging from job to stdout, as this pollutes slurm output
+  job_logging:
+    root:
+      handlers: [file]

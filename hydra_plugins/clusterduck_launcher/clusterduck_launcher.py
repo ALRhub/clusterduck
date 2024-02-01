@@ -36,6 +36,7 @@ class BaseClusterDuckLauncher(Launcher):
         wait_for_completion: bool,
         resources_config: DictConfig,
         verbose: bool,
+        start_method: str = "fork",
         **params: Any,
     ) -> None:
         self.n_workers = parallel_runs_per_node
@@ -43,6 +44,7 @@ class BaseClusterDuckLauncher(Launcher):
         self.wait_for_completion = wait_for_completion
         self.resources_config = resources_config
         self.verbose = verbose
+        self.start_method = start_method
 
         # parameters used by submitit
         self.params = {}
@@ -106,7 +108,7 @@ class BaseClusterDuckLauncher(Launcher):
             n_workers=self.n_workers,
             resource_pools=resource_pools,
             # we use fork because many Hydra objects are only pickable with cloudpickle
-            start_method="fork",
+            start_method=self.start_method,
         )
         results = process_manager.execute(
             target_fn=self,
