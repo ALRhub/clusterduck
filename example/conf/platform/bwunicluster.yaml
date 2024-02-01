@@ -14,7 +14,7 @@ hydra:
 
     # clusterduck specific options
     parallel_runs_per_node: 1
-    total_runs_per_node: 1
+    total_runs_per_node: 2
 
     start_method: spawn
     resources_config:

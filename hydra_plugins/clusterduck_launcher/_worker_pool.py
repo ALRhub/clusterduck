@@ -22,8 +22,6 @@ def worker(
 ):
     try:
         if start_method == "spawn":
-            #resources = cloudpickle.loads(resources)
-            # target = cloudpickle.loads(target)
             kwargs = {key: cloudpickle.loads(value) for key, value in kwargs.items()}
 
         ret = target(resources=resources, **kwargs)
@@ -63,18 +61,7 @@ class WorkerPool:
 
             kwargs = kwargs_list[i]
             if self.start_method == "spawn":
-                # This is a workaround for the fact that cloudpickle does not
-                # support sending lambdas over multiprocessing pipes.
-                # See
-                #resources = cloudpickle.dumps(resources)
-                # target_fn = cloudpickle.dumps(target_fn)
                 kwargs = {key: cloudpickle.dumps(value) for key, value in kwargs.items()}
-
-            # print(f"resources: {type(resources)}")
-            # print(f"target_fn: {type(target_fn)}")
-            # for key, value in kwargs_list.items():
-            #     print(f"{key}: {type(value)}")
-
 
             process = ctx.Process(
                 target=worker,
@@ -123,6 +110,10 @@ class WorkerPool:
                     resource_pool.get(worker_id)
                     for resource_pool in self.resource_pools
                 ]
+                kwargs = kwargs_list[submitted_overrides]
+                if self.start_method == "spawn":
+                    kwargs = {key: cloudpickle.dumps(value) for key, value in kwargs.items()}
+
                 processes[worker_id] = ctx.Process(
                     target=worker,
                     kwargs=dict(
@@ -130,7 +121,7 @@ class WorkerPool:
                         resources=resources,
                         pipe=worker_pipes[worker_id],
                         start_method=self.start_method,
-                        **kwargs_list[submitted_overrides],
+                        **kwargs,
                     ),
                 )
                 logger.info(
