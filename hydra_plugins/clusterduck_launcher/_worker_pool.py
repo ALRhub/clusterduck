@@ -13,6 +13,28 @@ ReturnType = TypeVar("ReturnType")
 logger = get_logger(__name__)
 
 
+def worker(
+        target: Callable,
+        resources: Sequence[Resource],
+        pipe: Connection,
+        start_method: Literal["fork", "spawn", "forkserver"] = "fork",
+        **kwargs: Any,
+):
+    try:
+        if start_method == "spawn":
+            resources = cloudpickle.loads(resources)
+            # target = cloudpickle.loads(target)
+            kwargs = {key: cloudpickle.loads(value) for key, value in kwargs.items()}
+
+        ret = target(resources=resources, **kwargs)
+        pipe.send(cloudpickle.dumps(ret))
+
+    except Exception as e:
+        import traceback
+
+        traceback.print_exc()
+        pipe.send(cloudpickle.dumps(e))
+
 class WorkerPool:
     def __init__(
         self,
@@ -24,27 +46,7 @@ class WorkerPool:
         self.resource_pools = resource_pools
         self.start_method = start_method
 
-    def worker(
-        self,
-        target: Callable,
-        resources: Sequence[Resource],
-        pipe: Connection,
-        **kwargs: Any,
-    ):
-        try:
-            if self.start_method == "spawn":
-                resources = cloudpickle.loads(resources)
-                #target = cloudpickle.loads(target)
-                kwargs = {key: cloudpickle.loads(value) for key, value in kwargs.items()}
 
-            ret = target(resources=resources, **kwargs)
-            pipe.send(cloudpickle.dumps(ret))
-
-        except Exception as e:
-            import traceback
-
-            traceback.print_exc()
-            pipe.send(cloudpickle.dumps(e))
 
     def execute(
         self,
@@ -75,10 +77,11 @@ class WorkerPool:
 
 
             process = ctx.Process(
-                target=self.worker,
+                target=worker,
                 kwargs=dict(
                     target=target_fn,
                     resources=resources,
+                    start_method=self.start_method,
                     pipe=worker_pipes[i],
                     **kwargs,
                 ),
@@ -121,11 +124,12 @@ class WorkerPool:
                     for resource_pool in self.resource_pools
                 ]
                 processes[worker_id] = ctx.Process(
-                    target=self.worker,
+                    target=worker,
                     kwargs=dict(
                         target=target_fn,
                         resources=resources,
                         pipe=worker_pipes[worker_id],
+                        start_method=self.start_method,
                         **kwargs_list[submitted_overrides],
                     ),
                 )
