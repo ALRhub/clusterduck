@@ -93,6 +93,9 @@ class SlurmQueueConf(BaseQueueConf):
     # Any additional arguments that should be passed to srun
     srun_args: Optional[List[str]] = None
 
+    # Which method to use to start the job
+    start_method: str = "fork"
+
 
 @dataclass
 class LocalQueueConf(BaseQueueConf):
