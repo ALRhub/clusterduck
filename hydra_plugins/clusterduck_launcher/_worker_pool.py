@@ -35,6 +35,7 @@ class WorkerPool:
             if self.start_method == "spawn":
                 resources = cloudpickle.loads(resources)
                 target = cloudpickle.loads(target)
+                kwargs = cloudpickle.loads(kwargs)
             ret = target(resources=resources, **kwargs)
             pipe.send(cloudpickle.dumps(ret))
 
@@ -63,6 +64,7 @@ class WorkerPool:
                 # See
                 resources = cloudpickle.dumps(resources)
                 target_fn = cloudpickle.dumps(target_fn)
+                kwargs_list = cloudpickle.dumps(kwargs_list)
 
             print(f"resources: {type(resources)}")
             print(f"target_fn: {type(target_fn)}")
