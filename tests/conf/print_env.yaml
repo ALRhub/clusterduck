@@ -5,9 +5,15 @@ env_vars:
   - HOSTNAME
   - CUDA_VISIBLE_DEVICES
   - SLURM_JOB_GPUS
+  - SLURM_JOB_ID
+  - SLURM_ARRAY_JOB_ID
+  - SLURM_ARRAY_TASK_ID
 
 cpu:
   detect_w_psutil: True
+  detect_w_os: True
+
+mem:
   detect_w_os: True
 
 gpu:

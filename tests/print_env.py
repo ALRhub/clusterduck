@@ -2,7 +2,7 @@ import hydra
 from omegaconf import DictConfig, OmegaConf
 
 
-@hydra.main(version_base=None, config_path="conf", config_name="config")
+@hydra.main(version_base=None, config_path="conf", config_name="print_env")
 def print_env(cfg: DictConfig) -> None:
     import logging
     import os
@@ -17,16 +17,26 @@ def print_env(cfg: DictConfig) -> None:
     if cfg.cpu.detect_w_psutil:
         import psutil
 
+        logger.info(f"[psutil] #CPUs: {psutil.cpu_count()}")
         logger.info(f"[psutil] CPU affinity: {psutil.Process().cpu_affinity()}")
 
     if cfg.cpu.detect_w_os:
+        logger.info(f"[os] #CPUs: {len(os.sched_getaffinity(0))}")
         logger.info(f"[os] CPU affinity: {list(os.sched_getaffinity(0))}")
+
+    if cfg.mem.detect_w_os:
+        import psutil
+
+        logger.info(
+            f"[psutil] Total memory: {psutil.virtual_memory().total / (1024 ** 3):.3f}G"
+        )
 
     if cfg.gpu.detect_w_pycuda:
         import pycuda.driver as cuda
 
         cuda.init()
-        for i in cuda.Device.count():
+        logger.info(f"[pycuda] {cuda.Device.count()} GPUs detected.")
+        for i in range(cuda.Device.count()):
             logger.info(f"[pycuda] GPU {i} at address {cuda.Device(i).pci_bus_id()}")
 
     if cfg.gpu.detect_w_pytorch:
