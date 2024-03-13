@@ -6,6 +6,7 @@ from omegaconf import DictConfig, OmegaConf
 def print_env(cfg: DictConfig) -> None:
     import logging
     import os
+    import multiprocessing as mp
 
     logger = logging.getLogger()
 
@@ -17,11 +18,13 @@ def print_env(cfg: DictConfig) -> None:
     if cfg.cpu.detect_w_psutil:
         import psutil
 
-        logger.info(f"[psutil] #CPUs: {psutil.cpu_count()}")
+        logger.info(f"[psutil] total #CPUs: {psutil.cpu_count()}")
+        logger.info(f"[psutil] available #CPUs: {len(psutil.Process().cpu_affinity())}")
         logger.info(f"[psutil] CPU affinity: {psutil.Process().cpu_affinity()}")
 
     if cfg.cpu.detect_w_os:
-        logger.info(f"[os] #CPUs: {len(os.sched_getaffinity(0))}")
+        logger.info(f"[mp] total #CPUs: {mp.cpu_count()}")
+        logger.info(f"[os] available #CPUs: {len(os.sched_getaffinity(0))}")
         logger.info(f"[os] CPU affinity: {list(os.sched_getaffinity(0))}")
 
     if cfg.mem.detect_w_os:
