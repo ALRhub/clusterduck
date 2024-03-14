@@ -1,0 +1,23 @@
+# @package _global_
+
+defaults:
+  - override /hydra/launcher: clusterduck_slurm
+  - _self_
+
+platform_name: horeka
+hydra:
+  mode: MULTIRUN
+  launcher:
+    # launcher/cluster specific options
+    timeout_min: 30
+    partition: accelerated
+    gres: gpu:4
+
+    # clusterduck specific options
+    parallel_runs_per_node: 4
+    total_runs_per_node: 4
+    wait_for_completion: False
+    resources_config:
+      cpu:
+      cuda:
+      rendering:

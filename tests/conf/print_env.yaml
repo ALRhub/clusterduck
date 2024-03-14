@@ -3,12 +3,14 @@ defaults:
 
 env_vars:
   - HOSTNAME
-  - CUDA_VISIBLE_DEVICES
-  - EGL_DEVICE_ID
-  - SLURM_JOB_GPUS
   - SLURM_JOB_ID
   - SLURM_ARRAY_JOB_ID
   - SLURM_ARRAY_TASK_ID
+  - SLURM_STEP_ID
+  - SLURM_JOB_GPUS
+  - SLURM_STEP_GPUS
+  - CUDA_VISIBLE_DEVICES
+  - EGL_DEVICE_ID
 
 cpu:
   detect_w_psutil: True

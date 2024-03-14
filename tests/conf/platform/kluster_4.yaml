@@ -10,7 +10,7 @@ hydra:
   launcher:
     name: ${hydra.job.name}
     submitit_folder: ${hydra.sweep.dir}/submitit/%j
-    timeout_min: 2880
+    timeout_min: 30
     gres: gpu:4
     additional_parameters:
       cpus-per-task: 48  # 1/4 of available CPUs

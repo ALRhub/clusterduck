@@ -12,7 +12,7 @@
 #SBATCH --open-mode=append
 #SBATCH --output=slurm_logs/log_%j.out
 #SBATCH --signal=USR2@120
-#SBATCH --time=2880
+#SBATCH --time=30
 #SBATCH --wckey=submitit
 
 echo "Starting job..."
