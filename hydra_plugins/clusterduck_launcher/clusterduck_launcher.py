@@ -128,9 +128,9 @@ class BaseClusterDuckLauncher(Launcher):
 
     def __call__(
         self,
-        sweep_overrides: Sequence[str],
+        job_overrides_sublist: Sequence[Sequence[str]],
         job_dir_key: str,
-        job_num: int,
+        initial_job_num: int,
         job_id: str,
         singleton_state: Dict[type, Singleton],
         resources: Sequence[Resource],
@@ -150,6 +150,10 @@ class BaseClusterDuckLauncher(Launcher):
 
         Singleton.set_state(singleton_state)
         setup_globals()
+
+        task_id = int(os.environ["SLURM_STEP_ID"])
+        sweep_overrides = job_overrides_sublist[task_id]
+
         sweep_config = self.hydra_context.config_loader.load_sweep_config(
             self.config, list(sweep_overrides)
         )
@@ -157,7 +161,7 @@ class BaseClusterDuckLauncher(Launcher):
         with open_dict(sweep_config.hydra.job) as job:
             # Populate new job variables
             job.id = submitit.JobEnvironment().job_id  # type: ignore
-            sweep_config.hydra.job.num = job_num
+            sweep_config.hydra.job.num = initial_job_num + task_id
 
         self.task_function.set_resources(resources)
 
@@ -248,20 +252,17 @@ class BaseClusterDuckLauncher(Launcher):
                 (
                     job_overrides_sublist,
                     "hydra.sweep.dir",  # job_dir_key
-                    range(  # job_nums
-                        idx * total_runs_per_node + initial_job_idx,
-                        (idx + 1) * total_runs_per_node + initial_job_idx,
-                    ),
+                    idx * total_runs_per_node + initial_job_idx,  # initial_job_num
                     f"job_id_for_{idx}",  # job_id
                     Singleton.get_state(),  # singleton_state
                 )
             )
 
         # launch all
-        jobs = executor.map_array(self.run_workers, *zip(*job_params))
+        jobs = executor.map_array(self, *zip(*job_params))
 
         if self.wait_for_completion:
-            return [result for j in jobs for result in j.results()[0]]
+            return [j.results()[0] for j in jobs]
         else:
             # we do our best to emulate what BaseSubmititLauncher.__call__ would do but with a
             # no-op task_function

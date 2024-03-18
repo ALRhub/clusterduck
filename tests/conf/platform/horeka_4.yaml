@@ -12,6 +12,14 @@ hydra:
     timeout_min: 30
     partition: accelerated
     gres: gpu:4
+    tasks_per_node: 4
+    additional_parameters:
+      cpus-per-task: 12
+      gpus-per-task: 1
+      mem-per-gpu: 120G
+    srun_args:
+      - "--exclusive"  # is this needed?
+      - "--exact"  # is this needed?
 
     # clusterduck specific options
     parallel_runs_per_node: 4
