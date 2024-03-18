@@ -14,12 +14,12 @@ hydra:
     gres: gpu:4
     tasks_per_node: 4
     additional_parameters:
-      cpus-per-task: 12
+      # cpus-per-task: 38  # optional, because Horeka ignores this
       gpus-per-task: 1
       mem-per-gpu: 120G
     srun_args:
-      - "--exclusive"  # is this needed?
-      - "--exact"  # is this needed?
+      - "--cpus-per-task=38"  # horeka ignores the job-level setting "cpus-per-task", so it must be set at the job step level
+      - "--exclusive"  # ensures that resources allocated to job steps are exclusive, implies --exact
 
     # clusterduck specific options
     parallel_runs_per_node: 4

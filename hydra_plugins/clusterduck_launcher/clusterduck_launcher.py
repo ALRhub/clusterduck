@@ -67,7 +67,7 @@ class BaseClusterDuckLauncher(Launcher):
 
         self.config = config
         self.hydra_context = hydra_context
-        self.task_function = WrappedTaskFunction(task_function)
+        self.task_function = task_function
 
     def run_workers(
         self,
@@ -133,7 +133,6 @@ class BaseClusterDuckLauncher(Launcher):
         initial_job_num: int,
         job_id: str,
         singleton_state: Dict[type, Singleton],
-        resources: Sequence[Resource],
     ) -> JobReturn:
         """This method runs inside the SLURM job inside a fresh process forked by `run_workers`.
         When this method starts, no logging of any kind has been configured. Hydra job logging
@@ -151,7 +150,7 @@ class BaseClusterDuckLauncher(Launcher):
         Singleton.set_state(singleton_state)
         setup_globals()
 
-        task_id = int(os.environ["SLURM_STEP_ID"])
+        task_id = int(os.environ["SLURM_LOCALID"])
         sweep_overrides = job_overrides_sublist[task_id]
 
         sweep_config = self.hydra_context.config_loader.load_sweep_config(
@@ -162,8 +161,6 @@ class BaseClusterDuckLauncher(Launcher):
             # Populate new job variables
             job.id = submitit.JobEnvironment().job_id  # type: ignore
             sweep_config.hydra.job.num = initial_job_num + task_id
-
-        self.task_function.set_resources(resources)
 
         return run_job(
             hydra_context=self.hydra_context,
