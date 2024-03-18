@@ -255,42 +255,128 @@ class BaseClusterDuckLauncher(Launcher):
                 )
             )
 
-        # launch all
-        jobs = executor.map_array(self, *zip(*job_params))
+        # # launch all
+        # jobs = executor.map_array(self, *zip(*job_params))
 
-        if self.wait_for_completion:
-            return [j.results()[0] for j in jobs]
+        import functools
+        import cloudpickle
+        import pickle
+        import shlex
+        import sys
+
+        from ._utils import as_sbatch_flag, as_srun_args, run_command
+
+        task = functools.partial(
+            self,
+            job_overrides,
+            job_dir_key="hydra.sweep.dir",
+            initial_job_num=initial_job_idx,
+            job_id=f"job_id_for_{idx}",
+            singleton_state=Singleton.get_state(),
+        )
+
+        folder = Path()
+        folder.mkdir(parents=True, exist_ok=True)
+
+        pickle_path = folder / "task.pkl"
+        with open(pickle_path, "wb") as ofile:
+            cloudpickle.dump(task, ofile, pickle.HIGHEST_PROTOCOL)
+
+        python = sys.executable
+        python_command = [
+            python,
+            "-u -m hydra_plugins.clusterduck_launcher._run",
+            str(pickle_path),
+        ]
+
+        submission_path = folder / "submission.sh"
+        job_parameters = {
+            "partition": "accelerated",
+            "time": 30,
+            "nodes": 1,
+            "ntasks_per_node": 4,
+            "gres": "gpu:4",
+            "open-mode": "append",
+        }
+        setup = []
+        srun_parameters = {
+            "cpus-per-task": 38,
+            "exclusive": True,
+        }
+
+        if num_jobs > 1:
+            job_parameters["array"] = (
+                f"0-{num_jobs - 1}%{min(num_jobs, self.max_parallel_array_jobs)}"
+            )
+            stdout = folder / "%A_%a/%A_%a_out.log"
+            stderr = folder / "%A_%a/%A_%a_err.log"
+            srun_stdout = folder / "%A_%a/%A_%a_%t_out.log"
+            srun_stderr = folder / "%A_%a/%A_%a_%t_err.log"
         else:
-            # we do our best to emulate what BaseSubmititLauncher.__call__ would do but with a
-            # no-op task_function
-            assert self.hydra_context is not None
-            assert self.config is not None
-            assert self.task_function is not None
+            stdout = folder / "%j/%j_out.log"
+            stderr = folder / "%j/%j_err.log"
+            srun_stdout = folder / "%j/%j_%t_out.log"
+            srun_stderr = folder / "%j/%j_%t_err.log"
 
-            no_op = lambda config: None
-            job_nums = range(initial_job_idx, initial_job_idx + len(job_overrides))
-            results: list[JobReturn] = []
-            for job_num, override in zip(job_nums, job_overrides):
-                sweep_config = self.hydra_context.config_loader.load_sweep_config(
-                    self.config, list(override)
-                )
+        job_parameters["output"] = str(stdout)
+        if not self.stderr_to_stdout:
+            job_parameters["error"] = str(stderr)
 
-                with open_dict(sweep_config.hydra.job) as job:
-                    # Populate new job variables
-                    # Cannot set job ID to slurm job ID as we are not inside slurm job
-                    sweep_config.hydra.job.num = job_num
+        lines = ["#!/bin/bash", "", "# Parameters"]
+        for k in sorted(job_parameters):
+            lines.append(as_sbatch_flag(k, job_parameters[k]))
+        # environment setup:
+        if setup is not None:
+            lines += ["", "# setup"] + setup
 
-                result = run_job(
-                    hydra_context=self.hydra_context,
-                    task_function=no_op,
-                    config=sweep_config,
-                    job_dir_key="hydra.sweep.dir",
-                    job_subdir_key="hydra.sweep.subdir",
-                    configure_logging=False,
-                )
+        srun = ["srun", "--unbuffered"]
+        srun += ["--output", str(srun_stdout)]
+        if not self.stderr_to_stdout:
+            srun += ["--error", str(srun_stderr)]
+        for k in sorted(srun_parameters):
+            srun.append(as_srun_args(k, srun_parameters[k]))
+        srun.extend(python_command)
+        srun = shlex.join(srun)
+        lines += ["", "# command", srun, ""]
+        with submission_path.open("w") as f:
+            f.writelines(lines)
 
-                results.append(result)
-            return results
+        submission_command = ["sbatch", str(submission_path)]
+        run_command(submission_command)
+
+        # if self.wait_for_completion:
+        #     return [j.results()[0] for j in jobs]
+        # else:
+        #     # we do our best to emulate what BaseSubmititLauncher.__call__ would do but with a
+        #     # no-op task_function
+        #     assert self.hydra_context is not None
+        #     assert self.config is not None
+        #     assert self.task_function is not None
+
+        #     no_op = lambda config: None
+        #     job_nums = range(initial_job_idx, initial_job_idx + len(job_overrides))
+        #     results: list[JobReturn] = []
+        #     for job_num, override in zip(job_nums, job_overrides):
+        #         sweep_config = self.hydra_context.config_loader.load_sweep_config(
+        #             self.config, list(override)
+        #         )
+
+        #         with open_dict(sweep_config.hydra.job) as job:
+        #             # Populate new job variables
+        #             # Cannot set job ID to slurm job ID as we are not inside slurm job
+        #             sweep_config.hydra.job.num = job_num
+
+        #         result = run_job(
+        #             hydra_context=self.hydra_context,
+        #             task_function=no_op,
+        #             config=sweep_config,
+        #             job_dir_key="hydra.sweep.dir",
+        #             job_subdir_key="hydra.sweep.subdir",
+        #             configure_logging=False,
+        #         )
+
+        #         results.append(result)
+        #     return results
 
 
 class ClusterDuckLocalLauncher(BaseClusterDuckLauncher):
