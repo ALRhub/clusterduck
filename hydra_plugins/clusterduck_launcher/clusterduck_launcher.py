@@ -259,10 +259,11 @@ class BaseClusterDuckLauncher(Launcher):
         # jobs = executor.map_array(self, *zip(*job_params))
 
         import functools
-        import cloudpickle
         import pickle
         import shlex
         import sys
+
+        import cloudpickle
 
         from ._utils import as_sbatch_flag, as_srun_args, run_command
 
@@ -275,19 +276,12 @@ class BaseClusterDuckLauncher(Launcher):
             singleton_state=Singleton.get_state(),
         )
 
-        folder = Path()
+        folder = Path(self.params["submitit_folder"])
         folder.mkdir(parents=True, exist_ok=True)
 
         pickle_path = folder / "task.pkl"
         with open(pickle_path, "wb") as ofile:
             cloudpickle.dump(task, ofile, pickle.HIGHEST_PROTOCOL)
-
-        python = sys.executable
-        python_command = [
-            python,
-            "-u -m hydra_plugins.clusterduck_launcher._run",
-            str(pickle_path),
-        ]
 
         submission_path = folder / "submission.sh"
         job_parameters = {
@@ -303,6 +297,8 @@ class BaseClusterDuckLauncher(Launcher):
             "cpus-per-task": 38,
             "exclusive": True,
         }
+        self.max_parallel_array_jobs = 256
+        self.stderr_to_stdout = False
 
         if num_jobs > 1:
             job_parameters["array"] = (
@@ -335,11 +331,19 @@ class BaseClusterDuckLauncher(Launcher):
             srun += ["--error", str(srun_stderr)]
         for k in sorted(srun_parameters):
             srun.append(as_srun_args(k, srun_parameters[k]))
+
+        python = sys.executable
+        python_command = [
+            python,
+            "-u -m hydra_plugins.clusterduck_launcher._run",
+            str(pickle_path),
+        ]
         srun.extend(python_command)
         srun = shlex.join(srun)
         lines += ["", "# command", srun, ""]
+
         with submission_path.open("w") as f:
-            f.writelines(lines)
+            f.write("\n".join(lines))
 
         submission_command = ["sbatch", str(submission_path)]
         run_command(submission_command)

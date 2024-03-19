@@ -10,6 +10,7 @@ hydra:
   launcher:
     # launcher/cluster specific options
     timeout_min: 30
+    submitit_folder: ${hydra.sweep.dir}/submitit
     partition: accelerated
     gres: gpu:4
     tasks_per_node: 4
