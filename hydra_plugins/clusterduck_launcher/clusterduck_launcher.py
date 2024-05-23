@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence
 
@@ -161,13 +162,27 @@ class BaseClusterDuckLauncher(Launcher):
 
         self.task_function.set_resources(resources)
 
-        return run_job(
-            hydra_context=self.hydra_context,
-            task_function=self.task_function,
-            config=sweep_config,
-            job_dir_key=job_dir_key,
-            job_subdir_key="hydra.sweep.subdir",
-        )
+        try:
+            results = run_job(
+                hydra_context=self.hydra_context,
+                task_function=self.task_function,
+                config=sweep_config,
+                job_dir_key=job_dir_key,
+                job_subdir_key="hydra.sweep.subdir",
+            )
+        except Exception as e:
+            # print error and stack trace to stderr
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+            traceback.print_tb(e.__traceback__, file=sys.stderr)
+
+            return JobReturn(
+                status=JobStatus.FAILED,
+                exception=e,
+                return_value=None,
+            )
+
+        return results
 
     def checkpoint(self, *args: Any, **kwargs: Any) -> Any:
         """Resubmit the current callable at its current state with the same initial arguments."""
