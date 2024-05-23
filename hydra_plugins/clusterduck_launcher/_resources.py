@@ -284,7 +284,7 @@ class Cpus(ResourcePool, kind="cpu"):
             )
 
         cpus_per_worker = n_cpus // n_workers
-        count_used_cpus = n_cpus*cpus_per_worker
+        count_used_cpus = n_workers*cpus_per_worker
         
         if n_cpus % n_workers:
             logger.warn(f"The number of workers ({n_workers}) must evenly divide the number of CPUs ({n_cpus}).")
