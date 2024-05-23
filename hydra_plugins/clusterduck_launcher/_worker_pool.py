@@ -85,7 +85,7 @@ class WorkerPool:
                     logger.error(
                         f"Process {submitted_overrides - 1} crashed with no return value."
                     )
-                    raise RuntimeError("Worker process sent no return value.")
+                    continue
                 result = pickle.loads(manager_pipes[worker_id].recv())
 
                 if isinstance(result, Exception):
