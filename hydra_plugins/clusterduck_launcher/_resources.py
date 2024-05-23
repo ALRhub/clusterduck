@@ -283,14 +283,14 @@ class Cpus(ResourcePool, kind="cpu"):
                 f"Cannot have more workers ({n_workers}) than CPUs ({n_cpus})!"
             )
 
-        if n_cpus % n_workers:
-            raise ValueError(
-                f"The number of workers ({n_workers}) must evenly divide the number of CPUs ({n_cpus})."
-            )
-
         cpus_per_worker = n_cpus // n_workers
+        count_used_cpus = n_cpus*cpus_per_worker
+        
+        if n_cpus % n_workers:
+            logger.warn(f"The number of workers ({n_workers}) must evenly divide the number of CPUs ({n_cpus}).")
+            
         cpu_groups: list[list[int]] = (
-            np.array(cpus).reshape(-1, cpus_per_worker).tolist()
+            np.array(cpus[:count_used_cpus]).reshape(-1, cpus_per_worker).tolist()
         )
         if n_workers > 1:
             logger.debug(f"Allocated the following CPU groups: {cpu_groups}")
