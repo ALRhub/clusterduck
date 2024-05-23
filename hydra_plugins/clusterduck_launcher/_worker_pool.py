@@ -85,15 +85,16 @@ class WorkerPool:
                     logger.error(
                         f"Process {submitted_overrides - 1} crashed with no return value."
                     )
-                    continue
-                result = pickle.loads(manager_pipes[worker_id].recv())
-
-                if isinstance(result, Exception):
+                    result = f"Process {submitted_overrides - 1} crashed with no return value."
+                elif isinstance(result, Exception):
                     logger.error(
                         f"Process {submitted_overrides - 1} completed with an uncaught exception."
                     )
-                    raise result
-                logger.debug(f"Process {submitted_overrides - 1} completed normally.")
+                    result = f"Process {submitted_overrides - 1} completed with an uncaught exception."
+                else:
+                    result = pickle.loads(manager_pipes[worker_id].recv())
+                    logger.debug(f"Process {submitted_overrides - 1} completed normally.")
+
                 results.append(result)
 
                 resources = [
@@ -123,11 +124,9 @@ class WorkerPool:
 
             if not manager_pipes[worker_id].poll():
                 # TODO: maybe do not throw an Exception here, as this stops job
-                raise RuntimeError("Worker process sent no return value.")
-            result = pickle.loads(manager_pipes[worker_id].recv())
-
-            if isinstance(result, Exception):
-                raise result
+                result = f"Process {worker_id} crashed with no return value."
+            elif isinstance(result, Exception):
+                result = f"Process {submitted_overrides - 1} completed with an uncaught exception."
             results.append(result)
 
         for manager_pipe, worker_pipe in zip(manager_pipes, worker_pipes):
