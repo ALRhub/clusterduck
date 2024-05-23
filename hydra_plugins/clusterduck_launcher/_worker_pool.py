@@ -125,7 +125,9 @@ class WorkerPool:
             if not manager_pipes[worker_id].poll():
                 # TODO: maybe do not throw an Exception here, as this stops job
                 result = f"Process {worker_id} crashed with no return value."
-            elif isinstance(result, Exception):
+            else:
+                result = pickle.loads(manager_pipes[worker_id].recv())
+            if isinstance(result, Exception):
                 result = f"Process {submitted_overrides - 1} completed with an uncaught exception."
             results.append(result)
 
