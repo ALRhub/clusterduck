@@ -4,6 +4,7 @@ from multiprocessing.connection import Connection, wait
 from typing import Any, Callable, Literal, Sequence, TypeVar
 
 import cloudpickle
+from hydra.core.utils import JobReturn, JobStatus
 
 from ._logging import get_logger
 from ._resources import Resource, ResourcePool
@@ -11,6 +12,12 @@ from ._resources import Resource, ResourcePool
 ReturnType = TypeVar("ReturnType")
 
 logger = get_logger(__name__)
+
+def create_failed_job_return(e: Exception | str) -> JobReturn:
+    result = JobReturn()
+    result.status = JobStatus.FAILED
+    result.return_value = f"Process crashed with exception: {e}"
+    return result
 
 
 class WorkerPool:
@@ -85,12 +92,12 @@ class WorkerPool:
                     logger.error(
                         f"Process {submitted_overrides - 1} crashed with no return value."
                     )
-                    result = f"Process {submitted_overrides - 1} crashed with no return value."
+                    result = create_failed_job_return(f"Process {submitted_overrides - 1} crashed with no return value.")
                 elif isinstance(result, Exception):
                     logger.error(
                         f"Process {submitted_overrides - 1} completed with an uncaught exception."
                     )
-                    result = f"Process {submitted_overrides - 1} completed with an uncaught exception."
+                    result = create_failed_job_return(f"Process {submitted_overrides - 1} completed with an uncaught exception.")
                 else:
                     result = pickle.loads(manager_pipes[worker_id].recv())
                     logger.debug(f"Process {submitted_overrides - 1} completed normally.")
@@ -124,11 +131,11 @@ class WorkerPool:
 
             if not manager_pipes[worker_id].poll():
                 # TODO: maybe do not throw an Exception here, as this stops job
-                result = f"Process {worker_id} crashed with no return value."
+                result = create_failed_job_return(f"Process {worker_id} crashed with no return value.")
             else:
                 result = pickle.loads(manager_pipes[worker_id].recv())
             if isinstance(result, Exception):
-                result = f"Process {submitted_overrides - 1} completed with an uncaught exception."
+                result = create_failed_job_return(f"Process {submitted_overrides - 1} completed with an uncaught exception.")
             results.append(result)
 
         for manager_pipe, worker_pipe in zip(manager_pipes, worker_pipes):
