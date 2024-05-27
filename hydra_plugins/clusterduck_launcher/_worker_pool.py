@@ -16,7 +16,7 @@ logger = get_logger(__name__)
 def create_failed_job_return(e: Exception | str) -> JobReturn:
     result = JobReturn()
     result.status = JobStatus.FAILED
-    result.return_value = f"Process crashed with exception: {e}"
+    result.return_value = RuntimeError(f"Process crashed with exception: {e}")
     return result
 
 

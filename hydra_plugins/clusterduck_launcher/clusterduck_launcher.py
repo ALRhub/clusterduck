@@ -114,16 +114,21 @@ class BaseClusterDuckLauncher(Launcher):
             kwargs_list=kwargs_list,
         )
 
-        exceptions = [
-            result.return_value
-            for result in results
-            if result.status == JobStatus.FAILED
-        ]
-        if exceptions:
-            # TODO: ExceptionGroup exists in Python 3.11 and up
-            raise RuntimeError(
-                f"{len(exceptions)} workers failed due to errors!"
-            ) from exceptions[0]
+        try:
+            exceptions = [
+                result.return_value
+                for result in results
+                if result.status == JobStatus.FAILED
+            ]
+            if exceptions:
+                # TODO: ExceptionGroup exists in Python 3.11 and up
+                raise RuntimeError(
+                    f"{len(exceptions)} workers failed due to errors!"
+                ) from exceptions[0]
+
+        except RuntimeError as e:
+            log.error(e)
+            raise e
 
         return results
 
