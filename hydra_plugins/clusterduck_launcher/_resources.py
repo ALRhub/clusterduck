@@ -279,9 +279,16 @@ class Cpus(ResourcePool, kind="cpu"):
         n_cpus = len(cpus)
 
         if n_workers > n_cpus:
-            raise ValueError(
-                f"Cannot have more workers ({n_workers}) than CPUs ({n_cpus})!"
+            # raise ValueError(
+            #     f"Cannot have more workers ({n_workers}) than CPUs ({n_cpus})!"
+            # )
+            logger.warn(
+                f"Number of workers ({n_workers}) exceeds number of CPUs ({n_cpus}). Some workers will share CPUs."
             )
+            # If there are more workers than CPUs, just assign one CPU per worker,
+            # allowing multiple workers to share the same CPU.
+            self.cpu_resources = [CpuGroup(cpus) for _ in range(n_workers)]
+            return
 
         cpus_per_worker = n_cpus // n_workers
         count_used_cpus = n_workers*cpus_per_worker
