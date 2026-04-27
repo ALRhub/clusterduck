@@ -1,30 +1,10 @@
 from __future__ import annotations
 
 import io
-import re
 import select
-import shlex
 import subprocess
 import sys
 import typing as tp
-
-
-def as_sbatch_flag(key: str, value) -> str:
-    key = key.replace("_", "-")
-    if value is True:
-        return f"#SBATCH --{key}"
-
-    value = shlex.quote(str(value))
-    return f"#SBATCH --{key}={value}"
-
-
-def as_srun_args(key: str, value) -> str:
-    key = key.replace("_", "-")
-    if value is True:
-        return f"--{key}"
-
-    value = shlex.quote(str(value))
-    return f"--{key}={value}"
 
 
 def run_command(command: list[str]) -> str:
@@ -99,17 +79,3 @@ def copy_process_streams(
             if verbose:
                 std.write(buf)
                 std.flush()
-
-
-def get_job_id_from_submission_command(string: bytes | str) -> str:
-    """Returns the job ID from the output of sbatch string"""
-    if not isinstance(string, str):
-        string = string.decode()
-    output = re.search(r"job (?P<id>[0-9]+)", string)
-    if output is None:
-        raise ValueError(
-            f'Could not make sense of sbatch output "{string}"\n'
-            "Job instance will not be able to fetch status\n"
-            "(you may however set the job job_id manually if needed)"
-        )
-    return output.group("id")

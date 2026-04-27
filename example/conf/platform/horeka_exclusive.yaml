@@ -11,11 +11,14 @@ hydra:
     account: hk-project-p0024023
     partition: accelerated
     constraint: LSDF
-    
+
     # compute resources
     timeout_min: 2880  # 48 hours
     cpus_per_task: 38
-    gres: gpu:1
+    gres: gpu:4
+    parallel_tasks_per_job: 4
+    srun_kwargs:
+      gres: gpu:1
 
     setup:
       # Create wandb folder in fast, job-local storage: https://www.nhr.kit.edu/userdocs/horeka/filesystems/#tmpdir

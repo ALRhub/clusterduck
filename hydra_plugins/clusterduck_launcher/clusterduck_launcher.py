@@ -3,11 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence
-
-if TYPE_CHECKING:
-    from ._wrapped_task import WrappedTaskFunction
-    from ._resources import Resource
+from typing import Any, Dict, List, Optional, Sequence
 
 from hydra.core.singleton import Singleton
 from hydra.core.utils import (
@@ -21,39 +17,38 @@ from hydra.plugins.launcher import Launcher
 from hydra.types import HydraContext, TaskFunction
 from omegaconf import DictConfig, OmegaConf, open_dict
 
-from .config import BaseQueueConf
-
 log = logging.getLogger("clusterduck.launcher")
 
 
-class BaseClusterDuckLauncher(Launcher):
-    _EXECUTOR = "abstract"
+class ClusterDuckLauncher(Launcher):
+    SBATCH_FILENAME = "submission.sh"
+    PICKLE_FILENAME = "submitted.pkl"
 
     def __init__(
         self,
-        parallel_runs_per_node: int,
-        total_runs_per_node: int | None,
-        wait_for_completion: bool,
-        resources_config: DictConfig,
-        verbose: bool,
-        **params: Any,
+        log_folder: str,
+        parallel_tasks_per_job: int = 1,
+        sequential_tasks_per_job: int = 1,
+        verbose: bool = False,
+        **kwargs: Any,
     ) -> None:
-        self.n_workers = parallel_runs_per_node
-        self.total_runs_per_node = total_runs_per_node
-        self.wait_for_completion = wait_for_completion
-        self.resources_config = resources_config
+        self.parallel_tasks_per_job = parallel_tasks_per_job
+        self.sequential_tasks_per_job = sequential_tasks_per_job
+        self.log_folder = Path(log_folder)
         self.verbose = verbose
 
         # parameters used by submitit
-        self.params = {}
-        for k, v in params.items():
-            if OmegaConf.is_config(v):
-                v = OmegaConf.to_container(v, resolve=True)
-            self.params[k] = v
+        self.kwargs = {
+            key: (
+                OmegaConf.to_container(value, resolve=True)
+                if OmegaConf.is_config(value)
+                else value
+            )
+            for key, value in kwargs.items()
+        }
 
         self.config: Optional[DictConfig] = None
-        self.task_function: Optional[WrappedTaskFunction] = None
-        self.sweep_configs: Optional[TaskFunction] = None
+        self.task_function: Optional[TaskFunction] = None
         self.hydra_context: Optional[HydraContext] = None
 
     def setup(
@@ -63,279 +58,169 @@ class BaseClusterDuckLauncher(Launcher):
         task_function: TaskFunction,
         config: DictConfig,
     ) -> None:
-        from ._wrapped_task import WrappedTaskFunction
-
         self.config = config
         self.hydra_context = hydra_context
         self.task_function = task_function
 
-    def run_workers(
-        self,
-        sweep_overrides_list: List[List[str]],
-        job_dir_key: str,
-        job_nums: range,
-        job_id: str,
-        singleton_state: Dict[type, Singleton],
-    ) -> list[JobReturn]:
-        """This method runs inside the SLURM job and starts worker processes to run hydra jobs.
-        At this point, no Hydra logging has been configured, only submitit's logging, which logs
-        to stdout and stderr.
-        """
-        from ._logging import configure_log
-        from ._resources import create_resource_pools_from_cfg
-        from ._worker_pool import WorkerPool
-
-        configure_log(self.verbose)
-
-        kwargs_list = [
-            dict(
-                sweep_overrides=sweep_overrides,
-                job_dir_key=job_dir_key,
-                job_num=job_num,
-                job_id=job_id,
-                singleton_state=singleton_state,
-            )
-            for sweep_overrides, job_num in zip(sweep_overrides_list, job_nums)
-        ]
-
-        resource_pools = create_resource_pools_from_cfg(
-            self.resources_config, self.n_workers
-        )
-
-        process_manager = WorkerPool(
-            n_workers=self.n_workers,
-            resource_pools=resource_pools,
-            # we use fork because many Hydra objects are only pickable with cloudpickle
-            start_method="fork",
-        )
-        results = process_manager.execute(
-            target_fn=self,
-            kwargs_list=kwargs_list,
-        )
-
-        exceptions = [
-            result.return_value
-            for result in results
-            if result.status == JobStatus.FAILED
-        ]
-        if exceptions:
-            # TODO: ExceptionGroup exists in Python 3.11 and up
-            raise RuntimeError(
-                f"{len(exceptions)} workers failed due to errors!"
-            ) from exceptions[0]
-
-        return results
-
-    def __call__(
-        self,
-        job_overrides_sublist: Sequence[Sequence[str]],
-        job_dir_key: str,
-        initial_job_num: int,
-        job_id: str,
-        singleton_state: Dict[type, Singleton],
-    ) -> JobReturn:
-        """This method runs inside the SLURM job inside a fresh process forked by `run_workers`.
-        When this method starts, no logging of any kind has been configured. Hydra job logging
-        is configured inside `run_job`, so we delay important operations like applying resource
-        configurations and unpickling the task function until the __call__ method of the
-        WrappedTaskFunction, which is called from there.
-        """
-        # lazy import to ensure plugin discovery remains fast
-        import submitit
-
-        assert self.hydra_context is not None
-        assert self.config is not None
-        assert self.task_function is not None
-
-        Singleton.set_state(singleton_state)
-        setup_globals()
-
-        task_id = int(os.environ["SLURM_LOCALID"])
-        sweep_overrides = job_overrides_sublist[task_id]
-
-        sweep_config = self.hydra_context.config_loader.load_sweep_config(
-            self.config, list(sweep_overrides)
-        )
-
-        with open_dict(sweep_config.hydra.job) as job:
-            # Populate new job variables
-            job.id = submitit.JobEnvironment().job_id  # type: ignore
-            sweep_config.hydra.job.num = initial_job_num + task_id
-
-        return run_job(
-            hydra_context=self.hydra_context,
-            task_function=self.task_function,
-            config=sweep_config,
-            job_dir_key=job_dir_key,
-            job_subdir_key="hydra.sweep.subdir",
-        )
-
-    def checkpoint(self, *args: Any, **kwargs: Any) -> Any:
-        """Resubmit the current callable at its current state with the same initial arguments."""
-        # lazy import to ensure plugin discovery remains fast
-        import submitit
-
-        return submitit.helpers.DelayedSubmission(self, *args, **kwargs)
-
     def launch(
         self, job_overrides: Sequence[Sequence[str]], initial_job_idx: int
     ) -> Sequence[JobReturn]:
-        """This method runs inside the main Hydra process on the login node. At this point, only
-        Hydra logging (not job logging) has been configured, which by default logs everything of
-        level INFO and higher to stdout under the tag [HYDRA].
-        """
-
         # lazy import to ensure plugin discovery remains fast
-        import math
-
-        import submitit
-
-        assert self.config is not None
-
-        total_runs_per_node = self.total_runs_per_node or len(job_overrides)
-
-        num_jobs = math.ceil(len(job_overrides) / total_runs_per_node)
-        assert num_jobs > 0
-        params = self.params
-        # build executor
-        init_params = {"folder": self.params["submitit_folder"]}
-        specific_init_keys = {"max_num_timeout"}
-
-        init_params.update(
-            **{
-                f"{self._EXECUTOR}_{x}": y
-                for x, y in params.items()
-                if x in specific_init_keys
-            }
-        )
-        init_keys = specific_init_keys | {"submitit_folder"}
-        executor = submitit.AutoExecutor(cluster=self._EXECUTOR, **init_params)
-
-        # specify resources/parameters
-        baseparams = set(OmegaConf.structured(BaseQueueConf).keys())
-        params = {
-            x if x in baseparams else f"{self._EXECUTOR}_{x}": y
-            for x, y in params.items()
-            if x not in init_keys
-        }
-        executor.update_parameters(**params)
-
-        log.info(
-            f"Clusterduck '{self._EXECUTOR}' sweep output dir : "
-            f"{self.config.hydra.sweep.dir}"
-        )
-        sweep_dir = Path(str(self.config.hydra.sweep.dir))
-        sweep_dir.mkdir(parents=True, exist_ok=True)
-        if "mode" in self.config.hydra.sweep:
-            mode = int(str(self.config.hydra.sweep.mode), 8)
-            os.chmod(sweep_dir, mode=mode)
-
-        job_params: List[Any] = []
-        for idx in range(num_jobs):
-            job_overrides_sublist = job_overrides[
-                idx * total_runs_per_node : (idx + 1) * total_runs_per_node
-            ]
-            assert (
-                len(job_overrides_sublist) > 0
-                and len(job_overrides_sublist) <= total_runs_per_node
-            )
-
-            log.info(f"\tJob #{idx} :")
-            for overrides in job_overrides_sublist:
-                lst = " ".join(filter_overrides(overrides))
-                log.info(f"\t\t{lst}")
-
-            job_params.append(
-                (
-                    job_overrides_sublist,
-                    "hydra.sweep.dir",  # job_dir_key
-                    idx * total_runs_per_node + initial_job_idx,  # initial_job_num
-                    f"job_id_for_{idx}",  # job_id
-                    Singleton.get_state(),  # singleton_state
-                )
-            )
-
-        # # launch all
-        # jobs = executor.map_array(self, *zip(*job_params))
-
         import functools
+        import math
         import pickle
         import shlex
         import sys
 
         import cloudpickle
+        from hydra.core.singleton import Singleton
+        from hydra.core.utils import (
+            JobReturn,
+            configure_log,
+            filter_overrides,
+            setup_globals,
+        )
 
-        from ._utils import as_sbatch_flag, as_srun_args, run_command
+        from ._core import execute_job
+        from ._slurm import as_sbatch_flag, as_srun_args
+        from ._utils import run_command
+        from .config import RESOURCE_FIELDS, SBATCH_FIELDS
+
+        setup_globals()
+        assert self.config is not None
+        assert self.task_function is not None
+        assert self.hydra_context is not None
+
+        configure_log(self.config.hydra.hydra_logging, self.config.hydra.verbose)
+        sweep_dir = Path(str(self.config.hydra.sweep.dir))
+        sweep_dir.mkdir(parents=True, exist_ok=True)
+
+        log.info(f"Launching jobs, sweep output dir : {sweep_dir}")
+        if "mode" in self.config.hydra.sweep:
+            mode = int(str(self.config.hydra.sweep.mode), 8)
+            os.chmod(sweep_dir, mode=mode)
 
         task = functools.partial(
-            self,
+            execute_job,
+            initial_job_idx,
             job_overrides,
-            job_dir_key="hydra.sweep.dir",
-            initial_job_num=initial_job_idx,
-            job_id=f"job_id_for_{idx}",
+            self.hydra_context,
+            self.config,
+            self.task_function,
             singleton_state=Singleton.get_state(),
         )
 
-        folder = Path(self.params["submitit_folder"])
-        folder.mkdir(parents=True, exist_ok=True)
+        self.log_folder.mkdir(parents=True, exist_ok=True)
 
-        pickle_path = folder / "task.pkl"
+        # We create one pickle file per job array, then decide which override
+        # to apply based on the array index.
+        pickle_path = self.log_folder / self.PICKLE_FILENAME
         with open(pickle_path, "wb") as ofile:
             cloudpickle.dump(task, ofile, pickle.HIGHEST_PROTOCOL)
 
-        submission_path = folder / "submission.sh"
-        job_parameters = {
-            "partition": "accelerated",
-            "time": 30,
-            "nodes": 1,
-            "ntasks_per_node": 4,
-            "gres": "gpu:4",
-            "open-mode": "append",
-        }
-        setup = []
-        srun_parameters = {
-            "cpus-per-task": 38,
-            "exclusive": True,
-        }
-        self.max_parallel_array_jobs = 256
-        self.stderr_to_stdout = False
+        submission_path = self.log_folder / self.SBATCH_FILENAME
 
-        if num_jobs > 1:
-            job_parameters["array"] = (
-                f"0-{num_jobs - 1}%{min(num_jobs, self.max_parallel_array_jobs)}"
-            )
-            stdout = folder / "%A_%a/%A_%a_out.log"
-            stderr = folder / "%A_%a/%A_%a_err.log"
-            srun_stdout = folder / "%A_%a/%A_%a_%t_out.log"
-            srun_stderr = folder / "%A_%a/%A_%a_%t_err.log"
+        # job_parameters = {
+        #     "partition": "accelerated",
+        #     "time": 30,
+        #     "nodes": 1,
+        #     "ntasks_per_node": 4,
+        #     "gres": "gpu:4",
+        #     "open-mode": "append",
+        # }
+        # srun_parameters = {
+        #     "cpus-per-task": 38,
+        #     "exclusive": True,
+        # }
+        # self.stderr_to_stdout = False
+
+        num_tasks = len(job_overrides)
+        tasks_per_job = self.parallel_tasks_per_job * self.sequential_tasks_per_job
+        num_jobs = math.ceil(num_tasks / tasks_per_job)
+        assert num_tasks > 0 and num_jobs > 0
+
+        # TODO: limit num_tasks to number of overrides, right?
+
+        sbatch_kwargs = self.kwargs.pop("sbatch_kwargs", {}) or {}
+        srun_kwargs = self.kwargs.pop("srun_kwargs", {}) or {}
+        setup = self.kwargs.pop("setup", None)
+        array_parallelism = self.kwargs.pop("array_parallelism", 256)
+        stderr_to_stdout = self.kwargs.pop("stderr_to_stdout", False)
+        signal_delay_s = self.kwargs.pop("signal_delay_s", 120)
+
+        sbatch_kwargs.update(
+            {key: self.kwargs.pop(key) for key in SBATCH_FIELDS if key in self.kwargs}
+        )
+
+        resource_kwargs = {
+            key: self.kwargs.pop(key) for key in RESOURCE_FIELDS if key in self.kwargs
+        }
+
+        assert not self.kwargs
+
+        if tasks_per_job == 1:
+            # In this case, each job in the array submission requests the
+            # specified resources and only runs a single task.
+            sbatch_kwargs.update(resource_kwargs)
+
         else:
-            stdout = folder / "%j/%j_out.log"
-            stderr = folder / "%j/%j_err.log"
-            srun_stdout = folder / "%j/%j_%t_out.log"
-            srun_stderr = folder / "%j/%j_%t_err.log"
+            # In this case, we assume that the cluster only allocates entire
+            # nodes exclusively. Each job simply requests a node, and we forward
+            # all resource requests to the srun command.
+            srun_kwargs.update(resource_kwargs)
+            # Launch n parallel instances of the task inside each job (node)
+            sbatch_kwargs["ntasks"] = srun_kwargs["ntasks"] = tasks_per_job
+            # Ensure that each task inside the node has exclusive access to its
+            # resources, e.g. each GPU is only visible to one task.
+            srun_kwargs["exclusive"] = True
 
-        job_parameters["output"] = str(stdout)
-        if not self.stderr_to_stdout:
-            job_parameters["error"] = str(stderr)
+        if num_jobs == 1:
+            stdout = self.log_folder / "%j/%j_out.log"
+            stderr = self.log_folder / "%j/%j_err.log"
+            srun_stdout = self.log_folder / "%j/%j_%t_out.log"
+            srun_stderr = self.log_folder / "%j/%j_%t_err.log"
+        else:
+            sbatch_kwargs["array"] = (
+                f"0-{num_jobs - 1}%{min(num_jobs, array_parallelism)}"
+            )
+            stdout = self.log_folder / "%A_%a/%A_%a_out.log"
+            stderr = self.log_folder / "%A_%a/%A_%a_err.log"
+            srun_stdout = self.log_folder / "%A_%a/%A_%a_%t_out.log"
+            srun_stderr = self.log_folder / "%A_%a/%A_%a_%t_err.log"
+
+        sbatch_kwargs["output"] = str(stdout)
+        if not stderr_to_stdout:
+            sbatch_kwargs["error"] = str(stderr)
+
+        srun_kwargs["output"] = str(srun_stdout)
+        if not stderr_to_stdout:
+            srun_kwargs["error"] = str(srun_stderr)
+
+        # Filter out None values (unset values)
+        sbatch_kwargs = {
+            key: value for key, value in sbatch_kwargs.items() if value is not None
+        }
+        srun_kwargs = {
+            key: value for key, value in srun_kwargs.items() if value is not None
+        }
 
         lines = ["#!/bin/bash", "", "# Parameters"]
-        for k in sorted(job_parameters):
-            lines.append(as_sbatch_flag(k, job_parameters[k]))
+        for key, value in sbatch_kwargs.items():
+            lines.append(as_sbatch_flag(key, value))
+
         # environment setup:
         if setup is not None:
             lines += ["", "# setup"] + setup
 
         srun = ["srun", "--unbuffered"]
-        srun += ["--output", str(srun_stdout)]
-        if not self.stderr_to_stdout:
-            srun += ["--error", str(srun_stderr)]
-        for k in sorted(srun_parameters):
-            srun.append(as_srun_args(k, srun_parameters[k]))
+        for key, value in srun_kwargs.items():
+            srun.append(as_srun_args(key, value))
 
-        python = sys.executable
         python_command = [
-            python,
-            "-u -m hydra_plugins.clusterduck_launcher._run",
+            sys.executable,
+            "-u",  # Force the stdout and stderr streams to be unbuffered
+            "-m",
+            "hydra_plugins.clusterduck_launcher._run",
             str(pickle_path),
         ]
         srun.extend(python_command)
@@ -381,11 +266,3 @@ class BaseClusterDuckLauncher(Launcher):
 
         #         results.append(result)
         #     return results
-
-
-class ClusterDuckLocalLauncher(BaseClusterDuckLauncher):
-    _EXECUTOR = "local"
-
-
-class ClusterDuckSlurmLauncher(BaseClusterDuckLauncher):
-    _EXECUTOR = "slurm"
