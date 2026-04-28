@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import shlex
 from dataclasses import dataclass
@@ -15,6 +16,9 @@ PARAMETER_SYNONYMS = {
 }
 
 
+log = logging.getLogger("clusterduck")
+
+
 def make_sbatch_string(
     command: list[str],
     log_folder: str | Path,
@@ -22,7 +26,7 @@ def make_sbatch_string(
     srun_kwargs: dict[str, Any] | None = None,
     setup: list[str] | None = None,
     teardown: list[str] | None = None,
-    use_srun: bool = True,  # TODO: implement
+    use_srun: bool = True,
 ) -> str:
     log_folder = Path(log_folder)
     sbatch_kwargs = sbatch_kwargs or {}
@@ -82,13 +86,14 @@ def make_sbatch_string(
     if setup is not None:
         lines += ["", "# setup"] + setup
 
-    srun = ["srun", "--unbuffered"]
-    for key, value in srun_kwargs.items():
-        srun.append(as_srun_args(key, value))
+    if use_srun:
+        srun = ["srun", "--unbuffered"]
+        for key, value in srun_kwargs.items():
+            srun.append(as_srun_args(key, value))
 
-    srun.extend(command)
-    srun = shlex.join(srun)
-    lines += ["", "# command", srun, ""]
+        command = srun + command
+
+    lines += ["", "# command", shlex.join(command), ""]
 
     # environment teardown:
     if teardown is not None:
@@ -116,9 +121,28 @@ def as_srun_args(key: str, value) -> str:
 
 @dataclass
 class SlurmJobEnvironment:
+
+    ENV_VARS_TO_LOG = [
+        "HOSTNAME",
+        "SLURM_JOB_ID",
+        "SLURM_ARRAY_JOB_ID",
+        "SLURM_ARRAY_TASK_ID",
+        "SLURM_STEP_ID",
+        "SLURM_PROCID",
+        "SLURM_NTASKS",
+        "SLURM_JOB_GPUS",
+        "SLURM_STEP_GPUS",
+        "CUDA_VISIBLE_DEVICES",
+        "EGL_DEVICE_ID",
+    ]
+
     def __post_init__(self):
-        # TODO: log environment info (gpus, cpus) for debugging
-        pass
+        self.detect_cpu()
+        self.detect_mem()
+        self.detect_gpu()
+
+        for key in self.ENV_VARS_TO_LOG:
+            log.debug(f"Env variable {key}={os.environ.get(key, '[UNSET]')}")
 
     @cached_property
     def job_id(self) -> int:
@@ -188,3 +212,64 @@ class SlurmJobEnvironment:
     def global_rank(self) -> int:
         """Fetches the global rank of the task from the environment variable set by slurm."""
         return self.array_index * self.n_tasks + self.task_index
+
+    @staticmethod
+    def detect_cpu() -> None:
+        try:
+            import psutil
+
+            log.debug(f"[psutil] total #CPUs: {psutil.cpu_count()}")
+            log.debug(
+                f"[psutil] available #CPUs: {len(psutil.Process().cpu_affinity())}"
+            )
+            log.debug(f"[psutil] CPU affinity: {psutil.Process().cpu_affinity()}")
+
+            return
+
+        except ImportError:
+            pass
+
+        import multiprocessing as mp
+
+        log.debug(f"[mp] total #CPUs: {mp.cpu_count()}")
+        log.debug(f"[os] available #CPUs: {len(os.sched_getaffinity(0))}")
+        log.debug(f"[os] CPU affinity: {list(os.sched_getaffinity(0))}")
+
+    @staticmethod
+    def detect_mem() -> None:
+        try:
+            import psutil
+
+            log.debug(
+                f"[psutil] Total memory: {psutil.virtual_memory().total / (1024 ** 3):.3f}G"
+            )
+
+            return
+
+        except ImportError:
+            pass
+
+    @staticmethod
+    def detect_gpu() -> None:
+        try:
+            import pycuda.driver as cuda
+
+            cuda.init()
+            log.debug(f"[pycuda] {cuda.Device.count()} GPUs detected.")
+            for i in range(cuda.Device.count()):
+                log.debug(f"[pycuda] GPU {i} at address {cuda.Device(i).pci_bus_id()}")
+
+            return
+
+        except ImportError:
+            pass
+
+        try:
+            import torch
+
+            log.debug(f"[pytorch] {torch.cuda.device_count()} GPUs detected.")
+
+            return
+
+        except ImportError:
+            pass

@@ -66,10 +66,10 @@ class ClusterDuckLauncherConf:
     parallel_tasks_per_job: int = 1
     # number of tasks (i.e. hydra jobs) to run sequentially in each resource slot
     sequential_tasks_per_job: int = 1
+    # whether to use srun to launch the command or just run it directly in sbatch (useful for debugging)
+    use_srun: bool = True
     # whether to actually submit the job using sbatch or just generate the files
     do_submit: bool = True
-    # whether to print debug statements to the SLURM stdout log file
-    verbose: bool = False
 
 
 # finally, register the config type:

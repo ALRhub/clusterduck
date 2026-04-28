@@ -21,15 +21,13 @@ hydra:
       gres: gpu:1
 
     setup:
-      # Create wandb folder in fast, job-local storage: https://www.nhr.kit.edu/userdocs/horeka/filesystems/#tmpdir
-      # NOTE: wandb folder will be deleted after job completion, but by then it will have synced with server
-      - export WANDB_DIR=$TMPDIR/wandb
-      - mkdir -pv $WANDB_DIR
-      - export WANDB_CONSOLE=off
+      - export SLURM_JOB_ID=123456
+      - export SLURM_NTASKS=4
+      # modify these values to simulate how different tasks
+      - export SLURM_ARRAY_TASK_ID=0
+      - export SLURM_PROCID=0
 
+    use_srun: False
     do_submit: False
 
-  # disable logging from job to stdout, as this pollutes slurm output
-  job_logging:
-    root:
-      handlers: [file]
+  verbose: clusterduck

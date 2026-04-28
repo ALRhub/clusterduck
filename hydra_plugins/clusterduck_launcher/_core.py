@@ -9,7 +9,7 @@ from omegaconf import DictConfig, open_dict
 
 from ._slurm import SlurmJobEnvironment
 
-log = logging.getLogger(__name__)
+log = logging.getLogger("clusterduck")
 
 
 def execute_job(
@@ -24,8 +24,10 @@ def execute_job(
     setup_globals()
     Singleton.set_state(singleton_state)
 
-    # setup hydra logging for operations before the job starts
-    # TODO: verify
+    # Setup hydra logging for operations before the job starts. Because the
+    # hydra.runtime.output_dir and other hydra variables are not yet populated,
+    # this only logs to the console and not to any files. However, this is
+    # still captured in the slurm logs.
     configure_log(config.hydra.hydra_logging, config.hydra.verbose)
 
     # TODO: configure signal handlers?

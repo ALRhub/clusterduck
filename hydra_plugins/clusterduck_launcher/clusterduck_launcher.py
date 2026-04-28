@@ -22,15 +22,15 @@ class ClusterDuckLauncher(Launcher):
         log_folder: str,
         parallel_tasks_per_job: int = 1,
         sequential_tasks_per_job: int = 1,
+        use_srun: bool = True,
         do_submit: bool = True,
-        verbose: bool = False,
         **kwargs: Any,
     ) -> None:
         self.log_folder = Path(log_folder)
         self.parallel_tasks_per_job = parallel_tasks_per_job
         self.sequential_tasks_per_job = sequential_tasks_per_job
+        self.use_srun = use_srun
         self.do_submit = do_submit
-        self.verbose = verbose
 
         # parameters used by submitit
         self.kwargs = {
@@ -79,7 +79,6 @@ class ClusterDuckLauncher(Launcher):
         assert self.task_function is not None
         assert self.hydra_context is not None
 
-        # TODO: use separate logging, like submitit
         configure_log(self.config.hydra.hydra_logging, self.config.hydra.verbose)
         sweep_dir = Path(str(self.config.hydra.sweep.dir))
         sweep_dir.mkdir(parents=True, exist_ok=True)
@@ -155,6 +154,7 @@ class ClusterDuckLauncher(Launcher):
             sbatch_kwargs=sbatch_kwargs,
             srun_kwargs=srun_kwargs,
             setup=setup,
+            use_srun=self.use_srun,
         )
 
         with submission_path.open("w") as f:
