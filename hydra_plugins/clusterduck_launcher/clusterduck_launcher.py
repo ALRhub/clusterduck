@@ -79,6 +79,7 @@ class ClusterDuckLauncher(Launcher):
         assert self.task_function is not None
         assert self.hydra_context is not None
 
+        # TODO: use separate logging, like submitit
         configure_log(self.config.hydra.hydra_logging, self.config.hydra.verbose)
         sweep_dir = Path(str(self.config.hydra.sweep.dir))
         sweep_dir.mkdir(parents=True, exist_ok=True)
@@ -101,6 +102,7 @@ class ClusterDuckLauncher(Launcher):
 
         # We create one pickle file per job array, then decide which override
         # to apply based on the array index.
+        # TODO: maybe add option to use pickle instead of cloudpickle
         pickle_path = self.log_folder / self.PICKLE_FILENAME
         with open(pickle_path, "wb") as ofile:
             cloudpickle.dump(task, ofile, pickle.HIGHEST_PROTOCOL)

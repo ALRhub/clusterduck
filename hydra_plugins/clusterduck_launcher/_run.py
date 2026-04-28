@@ -41,6 +41,5 @@ if __name__ == "__main__":
         # TODO: save result via pickle
 
     except Exception as e:
-        # dump error and traceback
-        # logging
+        # TODO: log error and traceback
         raise e

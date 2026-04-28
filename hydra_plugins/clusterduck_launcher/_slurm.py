@@ -22,7 +22,7 @@ def make_sbatch_string(
     srun_kwargs: dict[str, Any] | None = None,
     setup: list[str] | None = None,
     teardown: list[str] | None = None,
-    use_srun: bool = True,
+    use_srun: bool = True,  # TODO: implement
 ) -> str:
     log_folder = Path(log_folder)
     sbatch_kwargs = sbatch_kwargs or {}
@@ -71,6 +71,7 @@ def make_sbatch_string(
     if not stderr_to_stdout:
         srun_kwargs["error"] = str(srun_stderr)
 
+    # TODO: implement
     signal_delay_s = sbatch_kwargs.pop("signal_delay_s", 120)
 
     lines = ["#!/bin/bash", "", "# Parameters"]
@@ -115,6 +116,10 @@ def as_srun_args(key: str, value) -> str:
 
 @dataclass
 class SlurmJobEnvironment:
+    def __post_init__(self):
+        # TODO: log environment info (gpus, cpus) for debugging
+        pass
+
     @cached_property
     def job_id(self) -> int:
         """Fetches the job id from the environment variable set by slurm"""
