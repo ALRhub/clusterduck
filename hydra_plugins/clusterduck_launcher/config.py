@@ -3,34 +3,6 @@ from typing import Any, Dict, List, Optional
 
 from hydra.core.config_store import ConfigStore
 
-# these fields are only compatible with sbatch
-SBATCH_FIELDS = [
-    "timeout_min",
-    "name",
-    "stderr_to_stdout",
-    "partition",
-    "qos",
-    "comment",
-    "constraint",
-    "exclude",
-    "account",
-    # strictly speaking, these node-level resource requests can also be provided to srun
-    "gpus_per_node",
-    "tasks_per_node",
-    "nodes",
-]
-
-# these fields are compatible with both sbatch and srun
-RESOURCE_FIELDS = [
-    "cpus_per_task",
-    "mem_gb",
-    "gres",
-    "cpus_per_gpu",
-    "gpus_per_task",
-    "mem_per_gpu",
-    "mem_per_cpu",
-]
-
 
 @dataclass
 class ClusterDuckLauncherConf:
@@ -94,6 +66,8 @@ class ClusterDuckLauncherConf:
     parallel_tasks_per_job: int = 1
     # number of tasks (i.e. hydra jobs) to run sequentially in each resource slot
     sequential_tasks_per_job: int = 1
+    # whether to actually submit the job using sbatch or just generate the files
+    do_submit: bool = True
     # whether to print debug statements to the SLURM stdout log file
     verbose: bool = False
 

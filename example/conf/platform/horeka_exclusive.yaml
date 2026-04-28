@@ -27,6 +27,8 @@ hydra:
       - mkdir -pv $WANDB_DIR
       - export WANDB_CONSOLE=off
 
+    do_submit: False
+
   # disable logging from job to stdout, as this pollutes slurm output
   job_logging:
     root:
