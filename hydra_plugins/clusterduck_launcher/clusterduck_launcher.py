@@ -83,7 +83,6 @@ class ClusterDuckLauncher(Launcher):
         sweep_dir = Path(str(self.config.hydra.sweep.dir))
         sweep_dir.mkdir(parents=True, exist_ok=True)
 
-        log.info(f"Launching jobs, sweep output dir : {sweep_dir}")
         if "mode" in self.config.hydra.sweep:
             mode = int(str(self.config.hydra.sweep.mode), 8)
             os.chmod(sweep_dir, mode=mode)
@@ -113,6 +112,16 @@ class ClusterDuckLauncher(Launcher):
         tasks_per_job = min(tasks_per_job, num_tasks)  # limit to number of overrides
         num_jobs = math.ceil(num_tasks / tasks_per_job)  # group into jobs
         assert num_tasks > 0 and num_jobs > 0
+
+        log.info(f"Launching jobs, sweep output dir : {sweep_dir}")
+        for idx in range(num_jobs):
+            job_overrides_sublist = job_overrides[
+                idx * tasks_per_job : (idx + 1) * tasks_per_job
+            ]
+            log.info(f"\tJob #{idx} :")
+            for overrides in job_overrides_sublist:
+                lst = " ".join(filter_overrides(overrides))
+                log.info(f"\t\t{lst}")
 
         sbatch_kwargs = self.kwargs.pop("sbatch_kwargs", {}) or {}
         srun_kwargs = self.kwargs.pop("srun_kwargs", {}) or {}

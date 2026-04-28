@@ -183,6 +183,3 @@ class SlurmJobEnvironment:
     def global_rank(self) -> int:
         """Fetches the global rank of the task from the environment variable set by slurm."""
         return self.array_index * self.n_tasks + self.task_index
-        return self.array_index * self.n_tasks + self.task_index
-        return self.array_index * self.n_tasks + self.task_index
-        return self.array_index * self.n_tasks + self.task_index
