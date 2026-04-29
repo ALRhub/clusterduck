@@ -20,14 +20,6 @@ hydra:
     srun_kwargs:
       gres: gpu:1
 
-    setup:
-      - export SLURM_JOB_ID=123456
-      - export SLURM_NTASKS=4
-      # modify these values to simulate how different tasks
-      - export SLURM_ARRAY_TASK_ID=0
-      - export SLURM_PROCID=0
-
-    use_srun: False
-    do_submit: False
+    local_debug: True
 
   verbose: clusterduck

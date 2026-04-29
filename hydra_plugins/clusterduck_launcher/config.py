@@ -70,6 +70,8 @@ class ClusterDuckLauncherConf:
     use_srun: bool = True
     # whether to actually submit the job using sbatch or just generate the files
     do_submit: bool = True
+    # shortcut for use_srun=False and do_submit=False, which generates a script that can be executed locally for debugging
+    local_debug: bool = False
 
 
 # finally, register the config type:

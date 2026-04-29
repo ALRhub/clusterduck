@@ -30,11 +30,12 @@ def execute_job(
     # still captured in the slurm logs.
     configure_log(config.hydra.hydra_logging, config.hydra.verbose)
 
-    # TODO: configure signal handlers?
-
     slurm = SlurmJobEnvironment()
     task_id = slurm.global_rank + initial_job_idx
     overrides = job_overrides[task_id]
+    log.debug(f"Executing task with global rank {task_id}")
+
+    # TODO: configure signal handlers?
 
     sweep_config = hydra_context.config_loader.load_sweep_config(
         config, list(overrides)

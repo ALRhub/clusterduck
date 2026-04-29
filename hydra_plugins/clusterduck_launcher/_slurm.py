@@ -54,18 +54,18 @@ def make_sbatch_string(
 
     # TODO: cleanup log file paths
     if array_count == 1:
-        stdout = log_folder / "%j/%j_out.log"
-        stderr = log_folder / "%j/%j_err.log"
-        srun_stdout = log_folder / "%j/%j_%t_out.log"
-        srun_stderr = log_folder / "%j/%j_%t_err.log"
+        stdout = log_folder / "%j_out.log"
+        stderr = log_folder / "%j_err.log"
+        srun_stdout = log_folder / "%j_%t_out.log"
+        srun_stderr = log_folder / "%j_%t_err.log"
     else:
         sbatch_kwargs["array"] = (
             f"0-{array_count - 1}%{min(array_count, array_parallelism)}"
         )
-        stdout = log_folder / "%A_%a/%A_%a_out.log"
-        stderr = log_folder / "%A_%a/%A_%a_err.log"
-        srun_stdout = log_folder / "%A_%a/%A_%a_%t_out.log"
-        srun_stderr = log_folder / "%A_%a/%A_%a_%t_err.log"
+        stdout = log_folder / "%A_%a_out.log"
+        stderr = log_folder / "%A_%a_err.log"
+        srun_stdout = log_folder / "%A_%a_%t_out.log"
+        srun_stderr = log_folder / "%A_%a_%t_err.log"
 
     sbatch_kwargs["output"] = str(stdout)
     if not stderr_to_stdout:
@@ -75,8 +75,8 @@ def make_sbatch_string(
     if not stderr_to_stdout:
         srun_kwargs["error"] = str(srun_stderr)
 
-    # TODO: implement
-    signal_delay_s = sbatch_kwargs.pop("signal_delay_s", 120)
+    sbatch_kwargs["open-mode"] = "append"
+    srun_kwargs["open-mode"] = "append"
 
     lines = ["#!/bin/bash", "", "# Parameters"]
     for key, value in sbatch_kwargs.items():
@@ -119,6 +119,9 @@ def as_srun_args(key: str, value) -> str:
     return f"--{key}={value}"
 
 
+sentinel = object()
+
+
 @dataclass
 class SlurmJobEnvironment:
 
@@ -145,37 +148,19 @@ class SlurmJobEnvironment:
             log.debug(f"Env variable {key}={os.environ.get(key, '[UNSET]')}")
 
     @cached_property
-    def job_id(self) -> int:
+    def job_id(self) -> str:
         """Fetches the job id from the environment variable set by slurm"""
-        try:
-            return int(os.environ["SLURM_JOB_ID"])
-        except KeyError:
-            raise RuntimeError(
-                "Could not find SLURM_JOB_ID in environment variables. "
-                "Make sure that the job is running inside a slurm allocation."
-            )
+        return self.try_get_env_var("SLURM_JOB_ID", default="LOCAL")
 
     @cached_property
-    def array_job_id(self) -> int:
+    def array_job_id(self) -> str:
         """Fetches the job id from the environment variable set by slurm."""
-        try:
-            return int(os.environ["SLURM_ARRAY_JOB_ID"])
-        except KeyError:
-            raise RuntimeError(
-                "Could not find SLURM_ARRAY_JOB_ID in environment variables. "
-                "Make sure that the job is running inside a slurm allocation."
-            )
+        return self.try_get_env_var("SLURM_ARRAY_JOB_ID", default="LOCAL")
 
     @cached_property
     def array_index(self) -> int:
         """Fetches the array id from the environment variable set by slurm."""
-        try:
-            return int(os.environ["SLURM_ARRAY_TASK_ID"])
-        except KeyError:
-            raise RuntimeError(
-                "Could not find SLURM_ARRAY_TASK_ID in environment variables. "
-                "Make sure that the job is running inside a slurm allocation."
-            )
+        return int(self.try_get_env_var("SLURM_ARRAY_TASK_ID", default=0))
 
     @cached_property
     def task_index(self) -> int:
@@ -185,13 +170,7 @@ class SlurmJobEnvironment:
         whereas SLURM_PROCID is the global index of the task across all
         nodes. (only relevant for multi-node jobs).
         """
-        try:
-            return int(os.environ["SLURM_PROCID"])
-        except KeyError:
-            raise RuntimeError(
-                "Could not find SLURM_PROCID in environment variables. "
-                "Make sure that the job is running inside a slurm allocation."
-            )
+        return int(self.try_get_env_var("SLURM_PROCID", default=0))
 
     @cached_property
     def n_tasks(self) -> int:
@@ -200,18 +179,27 @@ class SlurmJobEnvironment:
 
         Note: An array job with N subjobs will launch this many tasks per subjob.
         """
-        try:
-            return int(os.environ.get("SLURM_NTASKS", 1))
-        except KeyError:
-            raise RuntimeError(
-                "Could not find SLURM_NTASKS in environment variables. "
-                "Make sure that the job is running inside a slurm allocation."
-            )
+        return int(self.try_get_env_var("SLURM_NTASKS", default=1))
 
     @property
     def global_rank(self) -> int:
         """Fetches the global rank of the task from the environment variable set by slurm."""
         return self.array_index * self.n_tasks + self.task_index
+
+    @staticmethod
+    def try_get_env_var(key: str, default: Any = sentinel) -> Any:
+        try:
+            return os.environ[key]
+        except KeyError:
+            if default is not sentinel:
+                log.warning(
+                    f"Could not find {key} in environment variables. Using default value: {default}"
+                )
+                return default
+            else:
+                raise RuntimeError(
+                    f"Could not find {key} in environment variables. Make sure that the job is running inside a slurm allocation."
+                )
 
     @staticmethod
     def detect_cpu() -> None:
@@ -249,13 +237,17 @@ class SlurmJobEnvironment:
         except ImportError:
             pass
 
+        log.debug(
+            f"[os] Total memory: {os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES') / (1024 ** 3):.3f}G"
+        )
+
     @staticmethod
     def detect_gpu() -> None:
         try:
             import pycuda.driver as cuda
 
             cuda.init()
-            log.debug(f"[pycuda] {cuda.Device.count()} GPUs detected.")
+            log.debug(f"[pycuda] {cuda.Device.count()} GPU(s) detected:")
             for i in range(cuda.Device.count()):
                 log.debug(f"[pycuda] GPU {i} at address {cuda.Device(i).pci_bus_id()}")
 
@@ -267,9 +259,11 @@ class SlurmJobEnvironment:
         try:
             import torch
 
-            log.debug(f"[pytorch] {torch.cuda.device_count()} GPUs detected.")
+            log.debug(f"[pytorch] {torch.cuda.device_count()} GPU(s) detected.")
 
             return
 
         except ImportError:
             pass
+
+        log.debug("Could not detect GPUs. Neither pycuda nor pytorch is installed.")

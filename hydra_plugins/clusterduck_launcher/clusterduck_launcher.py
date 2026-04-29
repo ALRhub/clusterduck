@@ -24,13 +24,15 @@ class ClusterDuckLauncher(Launcher):
         sequential_tasks_per_job: int = 1,
         use_srun: bool = True,
         do_submit: bool = True,
+        local_debug: bool = False,
         **kwargs: Any,
     ) -> None:
         self.log_folder = Path(log_folder)
         self.parallel_tasks_per_job = parallel_tasks_per_job
         self.sequential_tasks_per_job = sequential_tasks_per_job
-        self.use_srun = use_srun
-        self.do_submit = do_submit
+        self.use_srun = use_srun and not local_debug
+        self.do_submit = do_submit and not local_debug
+        self.local_debug = local_debug
 
         # parameters used by submitit
         self.kwargs = {
