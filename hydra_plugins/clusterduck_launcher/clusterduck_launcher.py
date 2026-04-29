@@ -128,7 +128,7 @@ class ClusterDuckLauncher(Launcher):
 
         sbatch_kwargs = self.kwargs.pop("sbatch_kwargs", {}) or {}
         srun_kwargs = self.kwargs.pop("srun_kwargs", {}) or {}
-        setup = self.kwargs.pop("setup", None)
+        setup = self.kwargs.pop("setup", None) or []
 
         # remaining fields are assumed to be sbatch parameters
         sbatch_kwargs.update(self.kwargs)
@@ -143,12 +143,15 @@ class ClusterDuckLauncher(Launcher):
             srun_kwargs["exclusive"] = True
 
         python_command = [
-            sys.executable,
+            sys.executable,  # gets the path to the python interpreter in the currently active environment
             "-u",  # Force the stdout and stderr streams to be unbuffered
             "-m",
             "hydra_plugins.clusterduck_launcher._run",
             str(pickle_path),
         ]
+
+        # Ensure that we get the full stack trace if the job fails
+        setup.append("export HYDRA_FULL_ERROR=1")
 
         sbatch_text = make_sbatch_string(
             command=python_command,
@@ -170,4 +173,5 @@ class ClusterDuckLauncher(Launcher):
                 f"Generated submission script at {submission_path}, not submitting"
             )
 
+        # return empty list of JobReturn since we don't wait for the jobs to complete
         return []

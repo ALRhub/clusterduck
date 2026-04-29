@@ -30,16 +30,9 @@ if __name__ == "__main__":
             f"Waited for {wait_time} seconds but could not find submitted jobs in path:\n{pickle_path}"
         )
 
-    try:
-        # unpickle the task callable
-        with open(pickle_path, "rb") as ifile:
-            task_fn = pickle.load(ifile)
+    # unpickle the task callable
+    with open(pickle_path, "rb") as ifile:
+        task_fn = pickle.load(ifile)
 
-        # run task
-        result = task_fn()
-
-        # TODO: save result via pickle
-
-    except Exception as e:
-        # TODO: log error and traceback
-        raise e
+    # run task
+    result = task_fn()

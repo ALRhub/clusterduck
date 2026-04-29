@@ -53,6 +53,7 @@ def make_sbatch_string(
     stderr_to_stdout = sbatch_kwargs.pop("stderr_to_stdout", False)
 
     # TODO: cleanup log file paths
+    # TODO: make these paths configurable via launcher config
     if array_count == 1:
         stdout = log_folder / "%j_out.log"
         stderr = log_folder / "%j_err.log"
