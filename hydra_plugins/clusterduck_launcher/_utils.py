@@ -6,6 +6,8 @@ import subprocess
 import sys
 import typing as tp
 
+# TODO: see if these functions can be simplified
+
 
 def run_command(command: list[str]) -> str:
     with subprocess.Popen(
