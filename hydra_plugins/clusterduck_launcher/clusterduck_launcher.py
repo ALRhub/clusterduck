@@ -136,7 +136,7 @@ class ClusterDuckLauncher(Launcher):
 
         if tasks_per_job > 1:
             # Launch n parallel instances of the task inside each job (node)
-            sbatch_kwargs["ntasks"] = srun_kwargs["ntasks"] = tasks_per_job
+            sbatch_kwargs["ntasks-per-node"] = srun_kwargs["ntasks-per-node"] = tasks_per_job
             # Ensure that each task inside the node has exclusive access to its
             # resources, e.g. each GPU is only visible to one task.
             srun_kwargs["exclusive"] = True

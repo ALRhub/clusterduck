@@ -1,5 +1,6 @@
 import logging
 from typing import Any, Dict, Sequence
+import os
 
 from hydra.core.hydra_config import HydraConfig
 from hydra.core.singleton import Singleton
@@ -36,6 +37,7 @@ def execute_job(
     log.debug(f"Executing task with global rank {task_id}")
 
     # TODO: configure signal handlers?
+    os.environ["RANK"] = "0"
 
     sweep_config = hydra_context.config_loader.load_sweep_config(
         config, list(overrides)

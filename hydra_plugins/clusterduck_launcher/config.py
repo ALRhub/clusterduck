@@ -52,7 +52,7 @@ class ClusterDuckLauncherConf:
     # Following parameters are submitit specifics
     #
     # USR1 signal delay before timeout
-    signal_delay_s: int = 120
+    #signal_delay_s: int = 120
     # Maximum number of jobs running in parallel
     array_parallelism: int = 256
     # A list of commands to run in sbatch befure running srun
