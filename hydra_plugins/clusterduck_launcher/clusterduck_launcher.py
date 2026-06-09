@@ -182,7 +182,7 @@ class ClusterDuckLauncher(Launcher):
         if self.do_submit:
             submission_command = ["sbatch", str(submission_path)]
             result = run_command(submission_command)
-            log.info(f"Submission result: {result}")
+            log.info(result)
         else:
             log.info(
                 f"Generated submission script at {submission_path}, not submitting"

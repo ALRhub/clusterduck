@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shlex
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
 from typing import Any
+
+from ._utils import run_command
 
 PARAMETER_SYNONYMS = {
     "name": "job_name",
@@ -131,6 +134,17 @@ def as_srun_args(key: str, value) -> str:
     return f"--{key}={value}"
 
 
+def extract_job_id(sbatch_output: str) -> str:
+    """Extracts the job id from the output of sbatch command."""
+    # sbatch output is expected to be in the format "Submitted batch job <job_id>"
+    try:
+        return sbatch_output.strip().split()[-1]
+    except Exception as e:
+        raise RuntimeError(
+            f"Could not extract job id from sbatch output: {sbatch_output}"
+        ) from e
+
+
 sentinel = object()
 
 
@@ -154,6 +168,7 @@ class SlurmJobEnvironment:
     def __post_init__(self):
         self.detect_cpu()
         self.detect_mem()
+        self.detect_alloc_mem()
         self.detect_gpu()
 
         for key in self.ENV_VARS_TO_LOG:
@@ -253,6 +268,33 @@ class SlurmJobEnvironment:
             f"[os] Total memory: {os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES') / (1024 ** 3):.3f}G"
         )
 
+    def detect_alloc_mem(self) -> None:
+        """Detects the memory allocated by slurm for the current job. This is
+        useful to detect if we are running in an environment with memory limits
+        set by slurm, and to log the allocated memory for debugging purposes.
+
+        Note: This is not necessarily the same as the total memory available on
+        the node, since slurm can be configured to allocate only a subset of
+        the total memory to each job.
+        """
+        if self.job_id == "LOCAL":
+            # skip detection if we are not running inside a slurm job
+            return
+
+        try:
+            scontrol_output = run_command(["scontrol", "show", "job", str(self.job_id)])
+        except RuntimeError as e:
+            log.debug(f"Could not run scontrol to detect allocated memory: {e}")
+            return
+
+        mem = extract_tres_allocated_memory(scontrol_output)
+        if mem:
+            log.debug(f"[scontrol] job allocated memory: {mem}")
+        else:
+            log.debug(
+                f"Could not detect allocated memory from scontrol output: \n\n {scontrol_output}"
+            )
+
     @staticmethod
     def detect_gpu() -> None:
         try:
@@ -279,3 +321,25 @@ class SlurmJobEnvironment:
             pass
 
         log.debug("Could not detect GPUs. Neither pycuda nor pytorch is installed.")
+
+
+def extract_tres_allocated_memory(scontrol_output: str) -> str | None:
+    """
+    Parses scontrol output to find the TRES memory allocation.
+    Makes minimal assumptions about line numbers, ordering, or spacing.
+    """
+    # 1. Locate the TRES field. \bTRES=(\S+) looks for 'TRES='
+    # and captures all non-whitespace characters belonging to that field.
+    tres_match = re.search(r"\bTRES=(\S+)", scontrol_output)
+    if not tres_match:
+        return None
+
+    tres_value = tres_match.group(1)
+
+    # 2. Within the TRES string (e.g., "cpu=64,mem=128000M,node=1"),
+    # extract the value following "mem=" up until the next comma or end of string.
+    mem_match = re.search(r"\bmem=([^,]+)", tres_value)
+    if mem_match:
+        return mem_match.group(1)
+
+    return None
