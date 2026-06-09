@@ -20,7 +20,7 @@ class ClusterDuckLauncherConf:
     # number of gpus to use on each node
     gpus_per_node: Optional[int] = None
     # number of tasks to spawn on each node
-    tasks_per_node: Optional[int] = None
+    tasks_per_node: int = 1
     # memory to reserve for the job on each node (in GB)
     mem_gb: Optional[int] = None
     # number of nodes to use for the job
@@ -48,24 +48,15 @@ class ClusterDuckLauncherConf:
     mem_per_gpu: Optional[str] = None
     mem_per_cpu: Optional[str] = None
     account: Optional[str] = None
-
-    # Following parameters are submitit specifics
-    #
-    # USR1 signal delay before timeout
-    #signal_delay_s: int = 120
     # Maximum number of jobs running in parallel
     array_parallelism: int = 256
+
+    # Following parameters are clusterduck specific
     # A list of commands to run in sbatch befure running srun
     setup: Optional[List[str]] = None
     sbatch_kwargs: Dict[str, Any] = field(default_factory=dict)
     # Any additional arguments that should be passed to srun
     srun_kwargs: Dict[str, Any] = field(default_factory=dict)
-
-    # Following parameters are clusterduck specific
-    # number of tasks (i.e. hydra jobs) to run in parallel on each node
-    parallel_tasks_per_job: int = 1
-    # number of tasks (i.e. hydra jobs) to run sequentially in each resource slot
-    sequential_tasks_per_job: int = 1
     # whether to use srun to launch the command or just run it directly in sbatch (useful for debugging)
     use_srun: bool = True
     # whether to actually submit the job using sbatch or just generate the files

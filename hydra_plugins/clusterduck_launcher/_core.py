@@ -1,6 +1,5 @@
 import logging
 from typing import Any, Dict, Sequence
-import os
 
 from hydra.core.hydra_config import HydraConfig
 from hydra.core.singleton import Singleton
@@ -33,11 +32,21 @@ def execute_job(
 
     slurm = SlurmJobEnvironment()
     task_id = slurm.global_rank + initial_job_idx
+
+    if task_id >= len(job_overrides):
+        log.debug(
+            f"Ignoring task with global rank {task_id} since we only have {len(job_overrides)} overrides."
+        )
+        return run_job(
+            task_function=lambda cfg: None,
+            config=config,
+            job_dir_key="hydra.sweep.dir",
+            job_subdir_key="hydra.sweep.subdir",
+            hydra_context=hydra_context,
+        )
+
     overrides = job_overrides[task_id]
     log.debug(f"Executing task with global rank {task_id}")
-
-    # TODO: configure signal handlers?
-    os.environ["RANK"] = "0"
 
     sweep_config = hydra_context.config_loader.load_sweep_config(
         config, list(overrides)

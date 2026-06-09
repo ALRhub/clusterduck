@@ -1,5 +1,6 @@
 defaults:
   - model: convnet
+  - platform: null
   - _self_
 
 model:

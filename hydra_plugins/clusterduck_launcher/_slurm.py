@@ -15,8 +15,28 @@ PARAMETER_SYNONYMS = {
     "tasks_per_node": "ntasks_per_node",
 }
 
+SPECIAL_KWARGS = ["array_count", "array_parallelism", "stderr_to_stdout"]
+
 
 log = logging.getLogger("clusterduck")
+
+
+def clean_slurm_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Cleans up the kwargs by mapping parameter synonyms to their canonical
+    names and replacing underscores with hyphens.
+    """
+    # Map parameter synonyms to their canonical names
+    kwargs = {PARAMETER_SYNONYMS.get(key, key): value for key, value in kwargs.items()}
+
+    # Replace underscores with hyphens, unless the key is in SPECIAL_KWARGS
+    # (these are used internally by make_sbatch_string and are not passed to
+    # sbatch/srun)
+    kwargs = {
+        key.replace("_", "-") if key not in SPECIAL_KWARGS else key: value
+        for key, value in kwargs.items()
+    }
+
+    return kwargs
 
 
 def make_sbatch_string(
@@ -38,14 +58,6 @@ def make_sbatch_string(
     }
     srun_kwargs = {
         key: value for key, value in srun_kwargs.items() if value is not None
-    }
-
-    # Map parameter synonyms to their canonical names
-    sbatch_kwargs = {
-        PARAMETER_SYNONYMS.get(key, key): value for key, value in sbatch_kwargs.items()
-    }
-    srun_kwargs = {
-        PARAMETER_SYNONYMS.get(key, key): value for key, value in srun_kwargs.items()
     }
 
     array_count = sbatch_kwargs.pop("array_count", 1)
@@ -84,7 +96,7 @@ def make_sbatch_string(
         lines.append(as_sbatch_flag(key, value))
 
     # environment setup:
-    if setup is not None:
+    if setup:
         lines += ["", "# setup"] + setup
 
     if use_srun:
@@ -97,13 +109,13 @@ def make_sbatch_string(
     lines += ["", "# command", shlex.join(command), ""]
 
     # environment teardown:
-    if teardown is not None:
+    if teardown:
         lines += ["", "# teardown"] + teardown
+
     return "\n".join(lines)
 
 
 def as_sbatch_flag(key: str, value) -> str:
-    key = key.replace("_", "-")
     if value is True:
         return f"#SBATCH --{key}"
 
@@ -112,7 +124,6 @@ def as_sbatch_flag(key: str, value) -> str:
 
 
 def as_srun_args(key: str, value) -> str:
-    key = key.replace("_", "-")
     if value is True:
         return f"--{key}"
 

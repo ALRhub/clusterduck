@@ -1,25 +1,12 @@
 # @package _global_
 
 defaults:
-  - override /hydra/launcher: clusterduck_slurm
+  - horeka_4
   - _self_
 
 hydra:
-  mode: MULTIRUN  # needed for launcher to be used
   launcher:
-    # general
-    account: hk-project-p0024023
-    partition: accelerated
-    constraint: LSDF
-
-    # compute resources
-    timeout_min: 2880  # 48 hours
-    cpus_per_task: 38
-    gres: gpu:4
-    parallel_tasks_per_job: 4
-    srun_kwargs:
-      gres: gpu:1
-
-    local_debug: True
+    local_debug: False
+    do_submit: False
 
   verbose: clusterduck

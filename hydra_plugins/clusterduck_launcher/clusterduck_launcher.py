@@ -20,16 +20,12 @@ class ClusterDuckLauncher(Launcher):
     def __init__(
         self,
         log_folder: str,
-        parallel_tasks_per_job: int = 1,
-        sequential_tasks_per_job: int = 1,
         use_srun: bool = True,
         do_submit: bool = True,
         local_debug: bool = False,
         **kwargs: Any,
     ) -> None:
-        self.log_folder = Path(log_folder)
-        self.parallel_tasks_per_job = parallel_tasks_per_job
-        self.sequential_tasks_per_job = sequential_tasks_per_job
+        self.log_folder = Path(log_folder).resolve()
         self.use_srun = use_srun and not local_debug
         self.do_submit = do_submit and not local_debug
         self.local_debug = local_debug
@@ -73,7 +69,7 @@ class ClusterDuckLauncher(Launcher):
         from hydra.core.utils import configure_log, filter_overrides, setup_globals
 
         from ._core import execute_job
-        from ._slurm import make_sbatch_string
+        from ._slurm import clean_slurm_kwargs, make_sbatch_string
         from ._utils import run_command
 
         setup_globals()
@@ -109,8 +105,9 @@ class ClusterDuckLauncher(Launcher):
 
         submission_path = self.log_folder / self.SBATCH_FILENAME
 
+        kwargs = dict(self.kwargs)
         num_tasks = len(job_overrides)  # 1 task per override
-        tasks_per_job = self.parallel_tasks_per_job * self.sequential_tasks_per_job
+        tasks_per_job = kwargs["tasks_per_node"]
         tasks_per_job = min(tasks_per_job, num_tasks)  # limit to number of overrides
         num_jobs = math.ceil(num_tasks / tasks_per_job)  # group into jobs
         assert num_tasks > 0 and num_jobs > 0
@@ -125,21 +122,42 @@ class ClusterDuckLauncher(Launcher):
                 lst = " ".join(filter_overrides(overrides))
                 log.info(f"\t\t{lst}")
 
-        sbatch_kwargs = self.kwargs.pop("sbatch_kwargs", {}) or {}
-        srun_kwargs = self.kwargs.pop("srun_kwargs", {}) or {}
-        setup = self.kwargs.pop("setup", None) or []
-
+        extra_sbatch_kwargs = kwargs.pop("sbatch_kwargs", {}) or {}
+        srun_kwargs = kwargs.pop("srun_kwargs", {}) or {}
+        setup = kwargs.pop("setup", []) or []
         # remaining fields are assumed to be sbatch parameters
-        sbatch_kwargs.update(self.kwargs)
+        sbatch_kwargs = kwargs
 
         sbatch_kwargs["array_count"] = num_jobs
 
         if tasks_per_job > 1:
-            # Launch n parallel instances of the task inside each job (node)
-            sbatch_kwargs["ntasks-per-node"] = srun_kwargs["ntasks-per-node"] = tasks_per_job
             # Ensure that each task inside the node has exclusive access to its
             # resources, e.g. each GPU is only visible to one task.
             srun_kwargs["exclusive"] = True
+
+            # If RANK and LOCAL_RANK are not set, pytorch lightning uses
+            # SLURM_PROCID to determine the rank of the process, which determines
+            # e.g. whether the loggers should actually log. If we are not
+            # doing multi-node or multi-gpu training, we set this to 0 to ensure
+            # that all tasks log their output.
+            setup.insert(0, "export RANK=0")
+            setup.insert(0, "export LOCAL_RANK=0")
+
+        # Ensure that we get the full stack trace if the job fails
+        setup.insert(0, "export HYDRA_FULL_ERROR=1")
+
+        # ensure that kwargs use canonical parameter names so that merging works correctly
+        sbatch_kwargs = clean_slurm_kwargs(sbatch_kwargs)
+        extra_sbatch_kwargs = clean_slurm_kwargs(extra_sbatch_kwargs)
+        srun_kwargs = clean_slurm_kwargs(srun_kwargs)
+
+        # merge extra_sbatch_kwargs into sbatch_kwargs, with logging in case of overwriting existing parameters
+        for key, value in extra_sbatch_kwargs.items():
+            if key in sbatch_kwargs:
+                log.warning(
+                    f"Overwriting sbatch parameter {key}={sbatch_kwargs[key]} with {key}={value} from sbatch_kwargs"
+                )
+            sbatch_kwargs[key] = value
 
         python_command = [
             sys.executable,  # gets the path to the python interpreter in the currently active environment
@@ -148,9 +166,6 @@ class ClusterDuckLauncher(Launcher):
             "hydra_plugins.clusterduck_launcher._run",
             str(pickle_path),
         ]
-
-        # Ensure that we get the full stack trace if the job fails
-        setup.append("export HYDRA_FULL_ERROR=1")
 
         sbatch_text = make_sbatch_string(
             command=python_command,
@@ -166,7 +181,8 @@ class ClusterDuckLauncher(Launcher):
 
         if self.do_submit:
             submission_command = ["sbatch", str(submission_path)]
-            run_command(submission_command)
+            result = run_command(submission_command)
+            log.info(f"Submission result: {result}")
         else:
             log.info(
                 f"Generated submission script at {submission_path}, not submitting"
