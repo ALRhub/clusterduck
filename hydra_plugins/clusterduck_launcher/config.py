@@ -57,11 +57,11 @@ class ClusterDuckLauncherConf:
     sbatch_kwargs: Dict[str, Any] = field(default_factory=dict)
     # Any additional arguments that should be passed to srun
     srun_kwargs: Dict[str, Any] = field(default_factory=dict)
-    # whether to use srun to launch the command or just run it directly in sbatch (useful for debugging)
+    # If `True`, the python command will be launched by srun. If `False`, the python command is run directly inside the job. (default: `True`)
     use_srun: bool = True
-    # whether to actually submit the job using sbatch or just generate the files
+    # If `False`, create the submission file but do not actually submit it. (default: `True`)
     do_submit: bool = True
-    # shortcut for use_srun=False and do_submit=False, which generates a script that can be executed locally for debugging
+    # If `True`, this is a shortcut for `use_srun=False` and `do_submit=False`. This generates a script that can be executed locally as a standard shell script. (default: `False`)
     local_debug: bool = False
 
 

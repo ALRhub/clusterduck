@@ -1,3 +1,36 @@
 [build-system]
-requires = ["setuptools>=42"]
+requires = ["setuptools>=61.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "clusterduck"
+version = "2.0.0"
+authors = [
+  { name="Balazs Gyenes", email="balazs.gyenes@kit.edu" },
+  { name="Nicolas Schreiber", email="nicolas.schreiber@kit.edu" },
+]
+description = "A hydra launcher plugin for SLURM clusters"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "hydra-core >= 1.1.0.dev7",
+    "cloudpickle",
+]
+
+[project.optional-dependencies]
+dev = [
+    "psutil",
+    "pytest",
+    "pycuda",
+]
+all = [
+    "clusterduck[dev]",
+]
+
+[tool.setuptools.packages.find]
+include = ["hydra_plugins.*"]
