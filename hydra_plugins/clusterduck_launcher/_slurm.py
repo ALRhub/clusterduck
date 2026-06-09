@@ -102,14 +102,20 @@ def make_sbatch_string(
     if setup:
         lines += ["", "# setup"] + setup
 
+    lines += ["", "# command"]
+    command_str = shlex.join(command)
+
     if use_srun:
-        srun = ["srun", "--unbuffered"]
+        lines.append("srun --unbuffered \\")
         for key, value in srun_kwargs.items():
-            srun.append(as_srun_args(key, value))
+            lines.append(f"    {as_srun_args(key, value)} \\")
 
-        command = srun + command
+        lines.append("    " + command_str)
 
-    lines += ["", "# command", shlex.join(command), ""]
+    else:
+        lines.append(command_str)
+
+    lines.append("")
 
     # environment teardown:
     if teardown:

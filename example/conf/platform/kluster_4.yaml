@@ -14,11 +14,16 @@ hydra:
     
     # compute resources
     timeout_min: 2880  # 48 hours
-    gpus_per_task: 1
+    gres: gpu:4  # request 4 gpus per job, but we'll actually use 1 per task and run 4 tasks in parallel on the same node
     cpus_per_task: 4  # there are 20 cpus per node
     mem_per_cpu: 7500  # in MB (* 16 cpus = 120GB)
 
     tasks_per_node: 4
+    sbatch_kwargs:
+      # Each gpu should be used exclusively by one task.
+      # This is set automatically by gpus_per_task, but this option is not
+      # supported by the kluster.
+      gpu_bind: single:1
 
     setup:
       # Create wandb folder in fast, job-local storage: https://www.nhr.kit.edu/userdocs/horeka/filesystems/#tmpdir
