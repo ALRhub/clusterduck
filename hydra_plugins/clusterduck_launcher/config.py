@@ -11,7 +11,8 @@ class ClusterDuckLauncherConf:
         "hydra_plugins.clusterduck_launcher.clusterduck_launcher.ClusterDuckLauncher"
     )
 
-    log_folder: str = "${hydra.sweep.dir}/slurm"
+    # Following parameters map directly to sbatch parameters.
+    # For more info check: https://slurm.schedmd.com/sbatch.html
 
     # maximum time for the job in minutes
     timeout_min: int = 60
@@ -27,15 +28,6 @@ class ClusterDuckLauncherConf:
     nodes: int = 1
     # name of the job
     name: str = "${hydra.job.name}"
-    # redirect stderr to stdout
-    stderr_to_stdout: bool = False
-
-    # Params are used to configure sbatch, for more info check:
-    # https://github.com/facebookincubator/submitit/blob/main/submitit/slurm/slurm.py
-
-    # Following parameters are slurm specific
-    # More information: https://slurm.schedmd.com/sbatch.html
-    #
     # slurm partition to use on the cluster
     partition: Optional[str] = None
     qos: Optional[str] = None
@@ -48,15 +40,24 @@ class ClusterDuckLauncherConf:
     mem_per_gpu: Optional[str] = None
     mem_per_cpu: Optional[str] = None
     account: Optional[str] = None
-    # Maximum number of jobs running in parallel
-    array_parallelism: int = 256
 
-    # Following parameters are clusterduck specific
-    # A list of commands to run in sbatch befure running srun
-    setup: Optional[List[str]] = None
+    ## Following parameters are used by clusterduck
+    # Folder where the submission script and logs will be stored.
+    log_folder: str = "${hydra.sweep.dir}/slurm"
+    # redirect stderr to stdout
+    stderr_to_stdout: bool = False
+    # Throttle array jobs to only have this many jobs running at once
+    array_parallelism: int = 256
+    # Any additional arguments that should be passed to sbatch
     sbatch_kwargs: Dict[str, Any] = field(default_factory=dict)
     # Any additional arguments that should be passed to srun
     srun_kwargs: Dict[str, Any] = field(default_factory=dict)
+    # A list of commands to run in sbatch befure running srun
+    setup: Optional[List[str]] = None
+    # A list of commands to run in sbatch after running srun
+    teardown: Optional[List[str]] = None
+
+    ## Following parameters are mostly for debugging
     # If `True`, the python command will be launched by srun. If `False`, the python command is run directly inside the job. (default: `True`)
     use_srun: bool = True
     # If `False`, create the submission file but do not actually submit it. (default: `True`)

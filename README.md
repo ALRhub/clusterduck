@@ -32,6 +32,7 @@ Be aware that strict mode installs do not expose new files created in the projec
 clusterduck essentially allows you to generate sbatch files programmatically.
 We generate an sbatch script containing a single srun command that calls python.
 Since every cluster is different, we do not try to be clever, but instead let the user set the arguments for sbatch and srun transparently.
+Unless overridden, srun inherits arguments to sbatch used to launch the job.
 
 Each hydra override becomes a slurm task.
 One or more tasks may be grouped into a slurm job, and one or more jobs may be grouped into a slurm job array.
@@ -47,6 +48,7 @@ python your_app.py hydra/launcher=clusterduck_slurm --cfg hydra -p hydra.launche
 
 The majority of these arguments are passed to sbatch.
 In addition, `sbatch_kwargs` allows for adding and overriding arbitrary sbatch arguments, while `srun_kwargs` does the same for srun.
+To use flags with sbatch and srun (e.g. `--exclusive`), use `exclusive=True` in the config.
 Lastly `setup` allows for arbitrary shell commands to be executed before python is called (useful for environment variables, etc.).
 
 See example configs for cluster platforms under `example/conf/platform`.
@@ -105,6 +107,11 @@ python example/train.py --multirun model=convnet,transformer +iteration="range(2
 ```
 
 ## Sharp Edges
+
+### $TMP Folders
+
+On some clusters, slurm assigns each job its own dedicated temporary local storage at the path $TMP.
+Be aware that when multiple tasks are grouped into the same job, they all share the same $TMP folder.
 
 ### Hydra Sweepers
 

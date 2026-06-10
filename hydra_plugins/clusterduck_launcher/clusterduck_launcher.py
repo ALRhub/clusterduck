@@ -107,10 +107,9 @@ class ClusterDuckLauncher(Launcher):
 
         kwargs = dict(self.kwargs)
         num_tasks = len(job_overrides)  # 1 task per override
-        tasks_per_job = kwargs["tasks_per_node"]
-        tasks_per_job = min(tasks_per_job, num_tasks)  # limit to number of overrides
+        tasks_per_job = int(kwargs["tasks_per_node"])
         num_jobs = math.ceil(num_tasks / tasks_per_job)  # group into jobs
-        assert num_tasks > 0 and num_jobs > 0
+        assert num_tasks > 0 and tasks_per_job > 0 and num_jobs > 0
 
         log.info(f"Launching jobs, sweep output dir : {sweep_dir}")
         for idx in range(num_jobs):
@@ -125,6 +124,7 @@ class ClusterDuckLauncher(Launcher):
         extra_sbatch_kwargs = kwargs.pop("sbatch_kwargs", {}) or {}
         srun_kwargs = kwargs.pop("srun_kwargs", {}) or {}
         setup = kwargs.pop("setup", []) or []
+        teardown = kwargs.pop("teardown", []) or []
         # remaining fields are assumed to be sbatch parameters
         sbatch_kwargs = kwargs
 
@@ -173,6 +173,7 @@ class ClusterDuckLauncher(Launcher):
             sbatch_kwargs=sbatch_kwargs,
             srun_kwargs=srun_kwargs,
             setup=setup,
+            teardown=teardown,
             use_srun=self.use_srun,
         )
 
