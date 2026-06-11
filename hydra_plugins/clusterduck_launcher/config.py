@@ -45,7 +45,7 @@ class ClusterDuckLauncherConf:
     # Folder where the submission script and logs will be stored.
     log_folder: str = "${hydra.sweep.dir}/slurm"
     # redirect stderr to stdout
-    stderr_to_stdout: bool = False
+    stderr_to_stdout: bool = True
     # Throttle array jobs to only have this many jobs running at once
     array_parallelism: int = 256
     # Any additional arguments that should be passed to sbatch

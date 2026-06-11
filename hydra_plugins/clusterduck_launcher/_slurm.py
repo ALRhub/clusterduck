@@ -44,14 +44,12 @@ def clean_slurm_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
 
 def make_sbatch_string(
     command: list[str],
-    log_folder: str | Path,
     sbatch_kwargs: dict[str, Any] | None = None,
     srun_kwargs: dict[str, Any] | None = None,
     setup: list[str] | None = None,
     teardown: list[str] | None = None,
     use_srun: bool = True,
 ) -> str:
-    log_folder = Path(log_folder)
     sbatch_kwargs = sbatch_kwargs or {}
     srun_kwargs = srun_kwargs or {}
 
@@ -65,34 +63,13 @@ def make_sbatch_string(
 
     array_count = sbatch_kwargs.pop("array_count", 1)
     array_parallelism = sbatch_kwargs.pop("array_parallelism", 256)
-    stderr_to_stdout = sbatch_kwargs.pop("stderr_to_stdout", False)
 
-    # TODO: cleanup log file paths
-    # TODO: make these paths configurable via launcher config
-    if array_count == 1:
-        stdout = log_folder / "%j_out.log"
-        stderr = log_folder / "%j_err.log"
-        srun_stdout = log_folder / "%j_%t_out.log"
-        srun_stderr = log_folder / "%j_%t_err.log"
-    else:
-        sbatch_kwargs["array"] = (
-            f"0-{array_count - 1}%{min(array_count, array_parallelism)}"
-        )
-        stdout = log_folder / "%A_%a_out.log"
-        stderr = log_folder / "%A_%a_err.log"
-        srun_stdout = log_folder / "%A_%a_%t_out.log"
-        srun_stderr = log_folder / "%A_%a_%t_err.log"
-
-    sbatch_kwargs["output"] = str(stdout)
-    if not stderr_to_stdout:
-        sbatch_kwargs["error"] = str(stderr)
-
-    srun_kwargs["output"] = str(srun_stdout)
-    if not stderr_to_stdout:
-        srun_kwargs["error"] = str(srun_stderr)
-
-    sbatch_kwargs["open-mode"] = "append"
-    srun_kwargs["open-mode"] = "append"
+    if array_count > 1:
+        array_command = f"0-{array_count - 1}"
+        if array_parallelism < array_count:
+            # maximum number of simultaneously running tasks from the job array
+            array_command += f"%{array_parallelism}"
+        sbatch_kwargs["array"] = array_command
 
     lines = ["#!/bin/bash", "", "# Parameters"]
     for key, value in sbatch_kwargs.items():
@@ -115,12 +92,11 @@ def make_sbatch_string(
     else:
         lines.append(command_str)
 
-    lines.append("")
-
     # environment teardown:
     if teardown:
         lines += ["", "# teardown"] + teardown
 
+    lines.append("")
     return "\n".join(lines)
 
 

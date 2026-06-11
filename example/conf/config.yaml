@@ -8,3 +8,5 @@ model:
 
 a: 1
 b: 1
+
+fail: False

@@ -1,7 +1,13 @@
+from __future__ import annotations
+
 import argparse
 import pickle
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from hydra.core.utils import JobReturn
 
 try:  # loading numpy before loading the pickle, to avoid unexpected interactions
     # pylint: disable=unused-import
@@ -35,4 +41,7 @@ if __name__ == "__main__":
         task_fn = pickle.load(ifile)
 
     # run task
-    result = task_fn()
+    result: JobReturn = task_fn()
+
+    # access the return_value to trigger an exception in case the job failed.
+    _ = result.return_value

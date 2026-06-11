@@ -85,6 +85,10 @@ class ClusterDuckLauncher(Launcher):
             mode = int(str(self.config.hydra.sweep.mode), 8)
             os.chmod(sweep_dir, mode=mode)
 
+        self.log_folder.mkdir(parents=True, exist_ok=True)
+        kwargs = dict(self.kwargs)
+
+        ## Create the task function executed by each task and pickle it
         task = functools.partial(
             execute_job,
             initial_job_idx,
@@ -95,22 +99,22 @@ class ClusterDuckLauncher(Launcher):
             singleton_state=Singleton.get_state(),
         )
 
-        self.log_folder.mkdir(parents=True, exist_ok=True)
-
         # We create one pickle file per job array, then decide which override
         # to apply based on the array index.
         pickle_path = self.log_folder / self.PICKLE_FILENAME
         with open(pickle_path, "wb") as ofile:
             cloudpickle.dump(task, ofile, pickle.HIGHEST_PROTOCOL)
 
+        ## Create the batch file for submitting the jobs to slurm
         submission_path = self.log_folder / self.SBATCH_FILENAME
 
-        kwargs = dict(self.kwargs)
+        ## Compute number of tasks and jobs
         num_tasks = len(job_overrides)  # 1 task per override
         tasks_per_job = int(kwargs["tasks_per_node"])
         num_jobs = math.ceil(num_tasks / tasks_per_job)  # group into jobs
         assert num_tasks > 0 and tasks_per_job > 0 and num_jobs > 0
 
+        ## Pretty print how tasks (overrides) are distributed across jobs
         log.info(f"Launching jobs, sweep output dir : {sweep_dir}")
         for idx in range(num_jobs):
             job_overrides_sublist = job_overrides[
@@ -143,6 +147,33 @@ class ClusterDuckLauncher(Launcher):
             setup.insert(0, "export RANK=0")
             setup.insert(0, "export LOCAL_RANK=0")
 
+        ## construct log file names
+        stderr_to_stdout = sbatch_kwargs.pop("stderr_to_stdout", True)
+        # %A is actually always the correct job id, even with single jobs
+        # %j returns a different id for each job in a job array, so we can only 
+        # use it if we have a single job
+        # %a returns a nonsense integer for single jobs, so we can only use it if we have a job array
+        log_name_prefix = "%j" if num_jobs == 1 else "%A_%a"
+
+        sbatch_kwargs["output"] = str(self.log_folder / f"{log_name_prefix}_out.log")
+        if not stderr_to_stdout:
+            sbatch_kwargs["error"] = str(self.log_folder / f"{log_name_prefix}_err.log")
+
+        sbatch_kwargs["open-mode"] = "append"
+
+        # If we have multiple tasks per job, we need to add the task id to the
+        # log file names to avoid different tasks overwriting each other's logs.
+        # Otherwise we don't need to specify output and error for srun, because
+        # it will inherit the ones from sbatch.
+        if tasks_per_job > 1:
+            log_name_prefix += "_task_%t"
+
+            srun_kwargs["output"] = str(self.log_folder / f"{log_name_prefix}_out.log")
+            if not stderr_to_stdout:
+                srun_kwargs["error"] = str(self.log_folder / f"{log_name_prefix}_err.log")
+
+            srun_kwargs["open-mode"] = "append"
+
         # Ensure that we get the full stack trace if the job fails
         setup.insert(0, "export HYDRA_FULL_ERROR=1")
 
@@ -151,7 +182,8 @@ class ClusterDuckLauncher(Launcher):
         extra_sbatch_kwargs = clean_slurm_kwargs(extra_sbatch_kwargs)
         srun_kwargs = clean_slurm_kwargs(srun_kwargs)
 
-        # merge extra_sbatch_kwargs into sbatch_kwargs, with logging in case of overwriting existing parameters
+        # merge extra_sbatch_kwargs into sbatch_kwargs, with a warning if
+        # existing parameters are overwritten
         for key, value in extra_sbatch_kwargs.items():
             if key in sbatch_kwargs:
                 log.warning(
@@ -159,6 +191,7 @@ class ClusterDuckLauncher(Launcher):
                 )
             sbatch_kwargs[key] = value
 
+        ## Create the python command to execute with srun
         python_command = [
             sys.executable,  # gets the path to the python interpreter in the currently active environment
             "-u",  # Force the stdout and stderr streams to be unbuffered
@@ -169,7 +202,6 @@ class ClusterDuckLauncher(Launcher):
 
         sbatch_text = make_sbatch_string(
             command=python_command,
-            log_folder=self.log_folder,
             sbatch_kwargs=sbatch_kwargs,
             srun_kwargs=srun_kwargs,
             setup=setup,
@@ -182,8 +214,8 @@ class ClusterDuckLauncher(Launcher):
 
         if self.do_submit:
             submission_command = ["sbatch", str(submission_path)]
-            result = run_command(submission_command)
-            log.info(result)
+            submission_result = run_command(submission_command)
+            log.info(submission_result)
         else:
             log.info(
                 f"Generated submission script at {submission_path}, not submitting"
