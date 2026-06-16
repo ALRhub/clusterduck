@@ -116,3 +116,34 @@ Be aware that when multiple tasks are grouped into the same job, they all share 
 ### Hydra Sweepers
 
 Because the clusterduck launcher does not wait for the jobs to complete, it is not compatible with any sweepers that optimize some returned value.
+
+## Reference
+- **timeout_min** (`int`, default: `60`): maximum time for the job in minutes
+- **cpus_per_task** (`Optional[int]`, default: `None`): number of cpus to use for each task
+- **gpus_per_node** (`Optional[int]`, default: `None`): number of gpus to use on each node
+- **tasks_per_node** (`int`, default: `1`): number of tasks to spawn on each node
+- **mem_gb** (`Optional[int]`, default: `None`): memory to reserve for the job on each node (in GB)
+- **nodes** (`int`, default: `1`): number of nodes to use for the job
+- **name** (`str`, default: `'${hydra.job.name}'`): name of the job
+- **partition** (`Optional[str]`, default: `None`): slurm partition to use on the cluster
+- **qos** (`Optional[str]`, default: `None`)
+- **comment** (`Optional[str]`, default: `None`)
+- **constraint** (`Optional[str]`, default: `None`)
+- **exclude** (`Optional[str]`, default: `None`)
+- **gres** (`Optional[str]`, default: `None`)
+- **cpus_per_gpu** (`Optional[int]`, default: `None`)
+- **gpus_per_task** (`Optional[int]`, default: `None`)
+- **mem_per_gpu** (`Optional[str]`, default: `None`)
+- **mem_per_cpu** (`Optional[str]`, default: `None`)
+- **account** (`Optional[str]`, default: `None`)
+- **log_folder** (`str`, default: `'${hydra.sweep.dir}/slurm'`): Folder where the submission script, pickle and slurm logs will be stored.
+- **stderr_to_stdout** (`bool`, default: `True`): If `True`, redirect the standard error of the job to the same file as standard output.
+- **array_parallelism** (`int`, default: `256`): Throttle array jobs to only have this many jobs running at once
+- **sbatch_kwargs** (`Dict[str, Any]`, default: `{}`): Any additional arguments that should be passed to sbatch
+- **srun_kwargs** (`Dict[str, Any]`, default: `{}`): Any additional arguments that should be passed to srun
+- **setup** (`Optional[List[str]]`, default: `None`): A list of commands to run in sbatch befure running srun
+- **teardown** (`Optional[List[str]]`, default: `None`): A list of commands to run in sbatch after running srun
+- **tmpdir_vars** (`Optional[List[str]]`, default: `['TMP', 'TMPDIR']`): If these environment variables are set and there are multiple tasks, clusterduck will create a subfolder for each task and set the environment variable to point to that subfolder. This is useful for avoiding conflicts between tasks when writing temporary files.
+- **use_srun** (`bool`, default: `True`): If `True`, the python command will be launched by srun. If `False`, the python command is run directly inside the job.
+- **do_submit** (`bool`, default: `True`): If `False`, create the submission file but do not actually submit it.
+- **local_debug** (`bool`, default: `False`): If `True`, this is a shortcut for `use_srun=False` and `do_submit=False`. This generates a script that can be executed locally as a standard shell script.

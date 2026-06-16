@@ -42,9 +42,9 @@ class ClusterDuckLauncherConf:
     account: Optional[str] = None
 
     ## Following parameters are used by clusterduck
-    # Folder where the submission script and logs will be stored.
+    # Folder where the submission script, pickle and slurm logs will be stored.
     log_folder: str = "${hydra.sweep.dir}/slurm"
-    # redirect stderr to stdout
+    # If `True`, redirect the standard error of the job to the same file as standard output.
     stderr_to_stdout: bool = True
     # Throttle array jobs to only have this many jobs running at once
     array_parallelism: int = 256
@@ -56,15 +56,15 @@ class ClusterDuckLauncherConf:
     setup: Optional[List[str]] = None
     # A list of commands to run in sbatch after running srun
     teardown: Optional[List[str]] = None
-    # Environment variables for temporary directories
+    # If these environment variables are set and there are multiple tasks, clusterduck will create a subfolder for each task and set the environment variable to point to that subfolder. This is useful for avoiding conflicts between tasks when writing temporary files.
     tmpdir_vars: Optional[List[str]] = field(default_factory=lambda: ["TMP", "TMPDIR"])
 
     ## Following parameters are mostly for debugging
-    # If `True`, the python command will be launched by srun. If `False`, the python command is run directly inside the job. (default: `True`)
+    # If `True`, the python command will be launched by srun. If `False`, the python command is run directly inside the job.
     use_srun: bool = True
-    # If `False`, create the submission file but do not actually submit it. (default: `True`)
+    # If `False`, create the submission file but do not actually submit it.
     do_submit: bool = True
-    # If `True`, this is a shortcut for `use_srun=False` and `do_submit=False`. This generates a script that can be executed locally as a standard shell script. (default: `False`)
+    # If `True`, this is a shortcut for `use_srun=False` and `do_submit=False`. This generates a script that can be executed locally as a standard shell script.
     local_debug: bool = False
 
 
