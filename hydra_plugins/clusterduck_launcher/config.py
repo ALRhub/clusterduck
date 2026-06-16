@@ -56,6 +56,8 @@ class ClusterDuckLauncherConf:
     setup: Optional[List[str]] = None
     # A list of commands to run in sbatch after running srun
     teardown: Optional[List[str]] = None
+    # Environment variables for temporary directories
+    tmpdir_vars: Optional[List[str]] = field(default_factory=lambda: ["TMP", "TMPDIR"])
 
     ## Following parameters are mostly for debugging
     # If `True`, the python command will be launched by srun. If `False`, the python command is run directly inside the job. (default: `True`)

@@ -125,10 +125,12 @@ class ClusterDuckLauncher(Launcher):
                 lst = " ".join(filter_overrides(overrides))
                 log.info(f"\t\t{lst}")
 
+        # TODO: move these into init args of class
         extra_sbatch_kwargs = kwargs.pop("sbatch_kwargs", {}) or {}
         srun_kwargs = kwargs.pop("srun_kwargs", {}) or {}
         setup = kwargs.pop("setup", []) or []
         teardown = kwargs.pop("teardown", []) or []
+        tmpdir_vars = kwargs.pop("tmpdir_vars", ["TMP", "TMPDIR"]) or []
         # remaining fields are assumed to be sbatch parameters
         sbatch_kwargs = kwargs
 
@@ -150,7 +152,7 @@ class ClusterDuckLauncher(Launcher):
         ## construct log file names
         stderr_to_stdout = sbatch_kwargs.pop("stderr_to_stdout", True)
         # %A is actually always the correct job id, even with single jobs
-        # %j returns a different id for each job in a job array, so we can only 
+        # %j returns a different id for each job in a job array, so we can only
         # use it if we have a single job
         # %a returns a nonsense integer for single jobs, so we can only use it if we have a job array
         log_name_prefix = "%j" if num_jobs == 1 else "%A_%a"
@@ -170,7 +172,9 @@ class ClusterDuckLauncher(Launcher):
 
             srun_kwargs["output"] = str(self.log_folder / f"{log_name_prefix}_out.log")
             if not stderr_to_stdout:
-                srun_kwargs["error"] = str(self.log_folder / f"{log_name_prefix}_err.log")
+                srun_kwargs["error"] = str(
+                    self.log_folder / f"{log_name_prefix}_err.log"
+                )
 
             srun_kwargs["open-mode"] = "append"
 
