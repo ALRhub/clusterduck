@@ -38,8 +38,6 @@ Each hydra override becomes a slurm task.
 One or more tasks may be grouped into a slurm job, and one or more jobs may be grouped into a slurm job array.
 By default, we use one task per job and submit a job array if there are multiple tasks to run.
 
-### Configuration
-
 After clusterduck is installed, you can print out the available configuration options with the following command:
 
 ```bash
@@ -49,7 +47,7 @@ python your_app.py hydra/launcher=clusterduck_slurm --cfg hydra -p hydra.launche
 The majority of these arguments are passed to sbatch.
 In addition, `sbatch_kwargs` allows for adding and overriding arbitrary sbatch arguments, while `srun_kwargs` does the same for srun.
 To use flags with sbatch and srun (e.g. `--exclusive`), use `exclusive=True` in the config.
-Lastly `setup` allows for arbitrary shell commands to be executed before python is called (useful for environment variables, etc.).
+Lastly `setup` and `teardown` allow for arbitrary shell commands to be executed before and after python is called (useful for environment variables, etc.).
 
 See example configs for cluster platforms under `example/conf/platform`.
 
@@ -60,6 +58,10 @@ To batch multiple tasks into a single job, set `tasks_per_node`>1.
 Beyond that, you may need to adjust the config so that GPUs and CPUs are divided correctly among the tasks. Ideally, you can specify all required resources with e.g. `cpus_per_task` and `gpus_per_task`, in which case everything is handled automatically.
 Unfortunately, not all clusters support this.
 Please see the examples (`example/conf/platform`) and experiment with your cluster to see what works.
+
+On some clusters, slurm assigns each job its own dedicated temporary local storage at the path `$TMP` or `$TMPDIR`.
+However, when multiple tasks are grouped into the same job, they all share the same $TMP folder.
+If you write to these folders, use the `tmpdir_vars` parameter to tell clusterduck to create subfolders in that directory for each task within the job.
 
 ### Verbose Logging
 
@@ -106,18 +108,14 @@ To run the example script on the HoreKa cluster, use:
 python example/train.py --multirun model=convnet,transformer +iteration="range(2)" +platform=horeka
 ```
 
-## Sharp Edges
-
-### $TMP Folders
-
-On some clusters, slurm assigns each job its own dedicated temporary local storage at the path $TMP.
-Be aware that when multiple tasks are grouped into the same job, they all share the same $TMP folder.
+## Caveats
 
 ### Hydra Sweepers
 
 Because the clusterduck launcher does not wait for the jobs to complete, it is not compatible with any sweepers that optimize some returned value.
 
 ## Reference
+
 - **timeout_min** (`int`, default: `60`): maximum time for the job in minutes
 - **cpus_per_task** (`Optional[int]`, default: `None`): number of cpus to use for each task
 - **gpus_per_node** (`Optional[int]`, default: `None`): number of gpus to use on each node

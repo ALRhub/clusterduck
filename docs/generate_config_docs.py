@@ -113,7 +113,7 @@ def update_readme(doc_body: str) -> None:
     if match is None:
         raise ValueError(f'Could not find "{HEADING}" heading in {README_PATH}')
 
-    new_content = content[: match.end()] + doc_body
+    new_content = content[: match.end()] + "\n" + doc_body
     README_PATH.write_text(new_content)
 
 
