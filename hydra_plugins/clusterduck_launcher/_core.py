@@ -49,14 +49,15 @@ def execute_job(
     overrides = job_overrides[task_id]
     log.debug(f"Executing task with global rank {task_id}")
 
-    for tmp_dir_var in config.hydra.launcher.tmpdir_vars:
-        if tmp_dir_var in os.environ:
-            tmp_subdir = os.path.join(os.environ[tmp_dir_var], f"task_{task_id}")
-            os.makedirs(tmp_subdir, exist_ok=True)
-            os.environ[tmp_dir_var] = tmp_subdir
-            log.debug(
-                f"Created subfolder in {tmp_dir_var} for task {task_id}: {tmp_subdir}"
-            )
+    if slurm.n_tasks > 1:
+        for tmp_dir_var in config.hydra.launcher.tmpdir_vars:
+            if tmp_dir_var in os.environ:
+                tmp_subdir = os.path.join(os.environ[tmp_dir_var], f"task_{task_id}")
+                os.makedirs(tmp_subdir, exist_ok=True)
+                os.environ[tmp_dir_var] = tmp_subdir
+                log.debug(
+                    f"Created subfolder in {tmp_dir_var} for task {task_id}: {tmp_subdir}"
+                )
 
     sweep_config = hydra_context.config_loader.load_sweep_config(
         config, list(overrides)

@@ -8,7 +8,7 @@ from typing import Any, Optional, Sequence
 from hydra.core.utils import JobReturn
 from hydra.plugins.launcher import Launcher
 from hydra.types import HydraContext, TaskFunction
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 
 log = logging.getLogger("clusterduck")
 
@@ -20,25 +20,27 @@ class ClusterDuckLauncher(Launcher):
     def __init__(
         self,
         log_folder: str,
+        sbatch_kwargs: dict | None = None,
+        srun_kwargs: dict | None = None,
+        setup: Sequence[str] | None = None,
+        teardown: Sequence[str] | None = None,
+        tmpdir_vars: Sequence[str] | None = None,
         use_srun: bool = True,
         do_submit: bool = True,
         local_debug: bool = False,
         **kwargs: Any,
     ) -> None:
         self.log_folder = Path(log_folder).resolve()
+        self.extra_sbatch_kwargs = sbatch_kwargs or {}
+        self.srun_kwargs = srun_kwargs or {}
+        self.setup_ = setup or []
+        self.teardown = teardown or []
+        self.tmpdir_vars = tmpdir_vars or []
         self.use_srun = use_srun and not local_debug
         self.do_submit = do_submit and not local_debug
         self.local_debug = local_debug
-
-        # parameters used by submitit
-        self.kwargs = {
-            key: (
-                OmegaConf.to_container(value, resolve=True)
-                if OmegaConf.is_config(value)
-                else value
-            )
-            for key, value in kwargs.items()
-        }
+        # remaining fields are assumed to be sbatch parameters
+        self.sbatch_kwargs = kwargs
 
         self.config: Optional[DictConfig] = None
         self.task_function: Optional[TaskFunction] = None
@@ -86,7 +88,6 @@ class ClusterDuckLauncher(Launcher):
             os.chmod(sweep_dir, mode=mode)
 
         self.log_folder.mkdir(parents=True, exist_ok=True)
-        kwargs = dict(self.kwargs)
 
         ## Create the task function executed by each task and pickle it
         task = functools.partial(
@@ -110,7 +111,7 @@ class ClusterDuckLauncher(Launcher):
 
         ## Compute number of tasks and jobs
         num_tasks = len(job_overrides)  # 1 task per override
-        tasks_per_job = int(kwargs["tasks_per_node"])
+        tasks_per_job = int(self.sbatch_kwargs["tasks_per_node"])
         num_jobs = math.ceil(num_tasks / tasks_per_job)  # group into jobs
         assert num_tasks > 0 and tasks_per_job > 0 and num_jobs > 0
 
@@ -125,14 +126,12 @@ class ClusterDuckLauncher(Launcher):
                 lst = " ".join(filter_overrides(overrides))
                 log.info(f"\t\t{lst}")
 
-        # TODO: move these into init args of class
-        extra_sbatch_kwargs = kwargs.pop("sbatch_kwargs", {}) or {}
-        srun_kwargs = kwargs.pop("srun_kwargs", {}) or {}
-        setup = kwargs.pop("setup", []) or []
-        teardown = kwargs.pop("teardown", []) or []
-        tmpdir_vars = kwargs.pop("tmpdir_vars", ["TMP", "TMPDIR"]) or []
-        # remaining fields are assumed to be sbatch parameters
-        sbatch_kwargs = kwargs
+        ## Construct sbatch and srun kwargs, setup, and teardown commands
+        sbatch_kwargs = dict(self.sbatch_kwargs)
+        srun_kwargs = dict(self.srun_kwargs)
+        extra_sbatch_kwargs = dict(self.extra_sbatch_kwargs)
+        setup = list(self.setup_)
+        teardown = list(self.teardown)
 
         sbatch_kwargs["array_count"] = num_jobs
 
@@ -149,7 +148,7 @@ class ClusterDuckLauncher(Launcher):
             setup.insert(0, "export RANK=0")
             setup.insert(0, "export LOCAL_RANK=0")
 
-        ## construct log file names
+        ## Construct log file names
         stderr_to_stdout = sbatch_kwargs.pop("stderr_to_stdout", True)
         # %A is actually always the correct job id, even with single jobs
         # %j returns a different id for each job in a job array, so we can only
@@ -181,12 +180,12 @@ class ClusterDuckLauncher(Launcher):
         # Ensure that we get the full stack trace if the job fails
         setup.insert(0, "export HYDRA_FULL_ERROR=1")
 
-        # ensure that kwargs use canonical parameter names so that merging works correctly
+        # Ensure that kwargs use canonical parameter names so that merging works correctly
         sbatch_kwargs = clean_slurm_kwargs(sbatch_kwargs)
         extra_sbatch_kwargs = clean_slurm_kwargs(extra_sbatch_kwargs)
         srun_kwargs = clean_slurm_kwargs(srun_kwargs)
 
-        # merge extra_sbatch_kwargs into sbatch_kwargs, with a warning if
+        # Merge extra_sbatch_kwargs into sbatch_kwargs, with a warning if
         # existing parameters are overwritten
         for key, value in extra_sbatch_kwargs.items():
             if key in sbatch_kwargs:
@@ -204,6 +203,7 @@ class ClusterDuckLauncher(Launcher):
             str(pickle_path),
         ]
 
+        ## Generate sbatch script and submit jobs to slurm
         sbatch_text = make_sbatch_string(
             command=python_command,
             sbatch_kwargs=sbatch_kwargs,

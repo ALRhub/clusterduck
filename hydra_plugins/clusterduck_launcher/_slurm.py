@@ -6,7 +6,6 @@ import re
 import shlex
 from dataclasses import dataclass
 from functools import cached_property
-from pathlib import Path
 from typing import Any
 
 from ._utils import run_command
