@@ -1,0 +1,15 @@
+# @package _global_
+
+defaults:
+  - horeka
+  - _self_
+
+hydra:
+  launcher:
+    local_debug: False
+    do_submit: False
+
+    stderr_to_stdout: True
+    tasks_per_node: 1
+
+  verbose: clusterduck

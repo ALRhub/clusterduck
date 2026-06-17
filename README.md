@@ -1,8 +1,16 @@
 # clusterduck
 
-clusterduck is a hydra launcher plugin for running jobs in batches on a SLURM cluster. It is intended for small tasks on clusters where jobs have exclusive access to a node, such that submitting a single task to a node would be wasteful.
+clusterduck is a hydra launcher plugin for running jobs on a SLURM cluster.
 
-### Installation
+Unlike [hydra-submitit](https://hydra.cc/docs/plugins/submitit_launcher/), clusterduck also supports "batching" multiple tasks within one job.
+This may be useful if:
+1. your cluster only allocates exclusive nodes with multiple GPUs, but your tasks only use a single GPU
+2. you have hundreds of small jobs but your cluster imposes a (potentially project-wide) limit on the number of queued jobs
+
+In addition, clusterduck does not wait for your job to finish after submission!
+
+## Installation
+
 Install clusterduck with `pip install .`
 ```bash
 pip install .
@@ -19,10 +27,70 @@ pip install -e . --config-settings editable_mode=strict
 ```
 Be aware that strict mode installs do not expose new files created in the project until the installation is performed again.
 
-### Examples
-The example script requires a few additional dependencies. Install with:
+## Usage
+
+clusterduck essentially allows you to generate sbatch files programmatically.
+We generate an sbatch script containing a single srun command that calls python.
+Since every cluster is different, we do not try to be clever, but instead let the user set the arguments for sbatch and srun transparently.
+Unless overridden, srun inherits arguments to sbatch used to launch the job.
+
+Each hydra override becomes a slurm task.
+One or more tasks may be grouped into a slurm job, and one or more jobs may be grouped into a slurm job array.
+By default, we use one task per job and submit a job array if there are multiple tasks to run.
+
+After clusterduck is installed, you can print out the available configuration options with the following command:
+
 ```bash
-pip install ".[examples]"
+python your_app.py hydra/launcher=clusterduck_slurm --cfg hydra -p hydra.launcher
+```
+
+The majority of these arguments are passed to sbatch.
+In addition, `sbatch_kwargs` allows for adding and overriding arbitrary sbatch arguments, while `srun_kwargs` does the same for srun.
+To use flags with sbatch and srun (e.g. `--exclusive`), use `exclusive=True` in the config.
+Lastly `setup` and `teardown` allow for arbitrary shell commands to be executed before and after python is called (useful for environment variables, etc.).
+
+See example configs for cluster platforms under `example/conf/platform`.
+
+### Batching Tasks Within Jobs
+
+To batch multiple tasks into a single job, set `tasks_per_node`>1.
+(We use `tasks_per_node` instead of `ntasks`, because `ntasks`>1 is not compatible with [PyTorch Lightning](https://lightning.ai/docs/pytorch/stable/).)
+Beyond that, you may need to adjust the config so that GPUs and CPUs are divided correctly among the tasks. Ideally, you can specify all required resources with e.g. `cpus_per_task` and `gpus_per_task`, in which case everything is handled automatically.
+Unfortunately, not all clusters support this.
+Please see the examples (`example/conf/platform`) and experiment with your cluster to see what works.
+
+On some clusters, slurm assigns each job its own dedicated temporary local storage at the path `$TMP` or `$TMPDIR`.
+However, when multiple tasks are grouped into the same job, they all share the same $TMP folder.
+If you write to these folders, use the `tmpdir_vars` parameter to tell clusterduck to create subfolders in that directory for each task within the job.
+
+### Verbose Logging
+
+To debug resource allocation, please install the optional dependencies with `pip install ".[dev]"`.
+Then, use [hydra's verbose logging feature](https://hydra.cc/docs/tutorials/basic/running_your_app/logging/) to activate verbose logging in clusterduck.
+Either add `hydra.verbose=clusterduck` to your command or add the following to your config:
+```yaml
+hydra:
+  verbose: clusterduck
+```
+
+Afterwards, check the slurm logs your job produces to see which GPUs and CPUs and how much memory your job is assigned.
+
+### Debugging
+
+We also provide the following non-slurm options for debugging:
+
+- **use_srun:**  
+If `True`, the python command will be launched by srun. If `False`, the python command is run directly inside the job. (default: `True`)
+- **do_submit:**  
+If `False`, create the submission file but do not actually submit it. (default: `True`)
+- **local_debug:**  
+If `True`, this is a shortcut for `use_srun=False` and `do_submit=False`. This generates a script that can be executed locally as a standard shell script. (default: `False`)
+
+## Example
+
+The example script does not requires additional dependencies, but they are nice to have. Install with:
+```bash
+pip install ".[dev]"
 ```
 
 To run the example script locally, e.g. looping over both model types twice each, use:
@@ -32,7 +100,7 @@ python example/train.py --multirun model=convnet,transformer +iteration="range(2
 
 To run the example script with the submitit backend but locally without a cluster, specify the platform like this:
 ```bash
-python example/train.py --multirun model=convnet,transformer +iteration="range(2)" +platform=slurm_debug
+python example/train.py --multirun model=convnet,transformer +iteration="range(2)" +platform=local_debug
 ```
 
 To run the example script on the HoreKa cluster, use:
@@ -40,97 +108,48 @@ To run the example script on the HoreKa cluster, use:
 python example/train.py --multirun model=convnet,transformer +iteration="range(2)" +platform=horeka
 ```
 
-## Configuration Options
-This plugin is heavily inspired by the [hydra-submitit-launcher plugin](https://hydra.cc/docs/plugins/submitit_launcher/), and provides all parameters of that original plugin. See their documentation for details about those parameters.
+## Caveats
 
-Both plugins rely on [submitit](https://github.com/facebookincubator/submitit) for the real heavy lifting. See their documentation for more information.
+### Hydra Sweepers
 
-### Additional Parameters
-The following parameters are added by this plugin:
+Because the clusterduck launcher does not wait for the jobs to complete, it is not compatible with any sweepers that optimize some returned value.
 
-We refer to a hydra job, i.e. one execution of the hydra main function with a set of overrides, as a *run*, to differentiate it from both jobs and tasks as defined by SLURM.
+## Reference
 
-- **parallel_runs_per_node:**  
-The number of parallel executions per node, i.e. the number of experiments that will run simultaneously in a single SLURM job.
-This will depend on the available resources in a node.
-- **total_runs_per_node:**  
-The total number of executions per node, i.e. the number of experiments that will run in a single SLURM job.
-This will depend on the duration of a run, the `parallel_runs_per_node` setting, and the time limit you set for the job in SLURM.
-If not specified, all executions will be run in a single job.
-However only `parallel_runs_per_node` of these executions will be running at any given time.
-- **wait_for_completion:**  
-If set to true, the launcher will keep running in your login node until all SLURM jobs have completed before exiting.
-Otherwise it will submit the SLURM jobs into the queue and then exit.
-- **resources_config:**  
-Any resources that must be divided up among parallel runs within a SLURM job.
-Currently available are following options configurable resources:
-  - **cpu** Allocates CPUs evenly across parallel runs.
-    - Optional argument `cpus` specifies the CPU ids available to the job. Leave blank to auto-detect.
-  - **cuda** Allocates GPUs for CUDA (e.g. Pytorch, TensorFlow, JAX, etc.) evenly across parallel runs.
-    - Optional argument `gpus` specifies the GPU ids available to the job. Leave blank to auto-detect.
-  - **rendering** Allocates GPUs for headless rendering with EGL evenly across parallel runs. This is useful for e.g. image-based training on Mujoco environments, SOFA environments, headless rendering with pyglet, etc.
-    - Optional argument `gpus` specifies the GPU ids available to the job. Leave blank to auto-detect.
-  - **stagger:** This will delay the start of each task by the specified amount of seconds. This can be useful if you want to avoid starting all tasks at the same time, e.g. to avoid overloading the file system.
-    - Argument `delay` specifies the delay amount in seconds.
-- **verbose**
-If set to true, additional debug information will be printed to the SLURM job log (related to scheduling runs within a job and allocating resources), and to each hydra run log (related to setting up the resources for the run).
-If you are having difficulties with the plugin, setting this to true might help understand what is going on.
+### Slurm Settings (see https://slurm.schedmd.com/sbatch.html)
 
-Here an example of a `hydra/launcher` config for Horeka that uses some of the above options:
-```yaml
-hydra:
-  launcher:
-    # launcher/cluster specific options
-    timeout_min: 5
-    partition: accelerated
-    gres: gpu:4
-    setup:
-      # Create wandb folder in fast, job-local storage: https://www.nhr.kit.edu/userdocs/horeka/filesystems/#tmpdir
-      # NOTE: wandb folder will be deleted after job completion, but by then it will have synced with server
-      - export WANDB_DIR=$TMPDIR/wandb
-      - mkdir -pv $WANDB_DIR
-      - export WANDB_CONSOLE=off
-    
-    # clusterduck specific options
-    parallel_runs_per_node: 4
-    total_runs_per_node: 8
-    resources_config:
-      cpu:
-      cuda:
-      rendering:
-      stagger:
-        delay: 5
-```
+- **timeout_min** (`int`, default: `60`): maximum time for the job in minutes
+- **cpus_per_task** (`Optional[int]`, default: `None`): number of cpus to use for each task
+- **gpus_per_node** (`Optional[int]`, default: `None`): number of gpus to use on each node
+- **tasks_per_node** (`int`, default: `1`): number of tasks to spawn on each node
+- **mem_gb** (`Optional[int]`, default: `None`): memory to reserve for the job on each node (in GB)
+- **nodes** (`int`, default: `1`): number of nodes to use for the job
+- **name** (`str`, default: `'${hydra.job.name}'`): name of the job
+- **partition** (`Optional[str]`, default: `None`): slurm partition to use on the cluster
+- **qos** (`Optional[str]`, default: `None`)
+- **comment** (`Optional[str]`, default: `None`)
+- **constraint** (`Optional[str]`, default: `None`)
+- **exclude** (`Optional[str]`, default: `None`)
+- **gres** (`Optional[str]`, default: `None`)
+- **cpus_per_gpu** (`Optional[int]`, default: `None`)
+- **gpus_per_task** (`Optional[int]`, default: `None`)
+- **mem_per_gpu** (`Optional[str]`, default: `None`)
+- **mem_per_cpu** (`Optional[str]`, default: `None`)
+- **account** (`Optional[str]`, default: `None`)
 
-Further look into the example folder for a working example with multiple example configurations.
+### Clusterduck Settings
 
-### Development
-PyCUDA is a helpful tool for working with CUDA devices outside of the context of a machine learning library like pytorch. We recommend installing it with conda:
-```bash
-conda install pycuda
-```
+- **log_folder** (`str`, default: `'${hydra.sweep.dir}/slurm'`): Folder where the submission script, pickle and slurm logs will be stored.
+- **stderr_to_stdout** (`bool`, default: `True`): If `True`, redirect the standard error of the job to the same file as standard output.
+- **array_parallelism** (`int`, default: `256`): Throttle array jobs to only have this many jobs running at once
+- **sbatch_kwargs** (`Dict[str, Any]`, default: `{}`): Any additional arguments that should be passed to sbatch
+- **srun_kwargs** (`Dict[str, Any]`, default: `{}`): Any additional arguments that should be passed to srun
+- **setup** (`Optional[List[str]]`, default: `None`): A list of commands to run in sbatch befure running srun
+- **teardown** (`Optional[List[str]]`, default: `None`): A list of commands to run in sbatch after running srun
+- **tmpdir_vars** (`Optional[List[str]]`, default: `['TMP', 'TMPDIR']`): If these environment variables are set and there are multiple tasks, clusterduck will create a subfolder for each task and set the environment variable to point to that subfolder. This is useful for avoiding conflicts between tasks when writing temporary files.
 
-Install additional requirements for development using:
-```bash
-pip install ".[all]"
-```
+### Debugging Settings
 
-## Other Sweepers
-
-clusterduck plays nicely with other Hydra sweeper plugins, for example [Optuna](https://optuna.org/).
-You can find a small example of how to use clusterduck with Optuna in `example/conf/optim/optuna.yaml`.
-
-To run the example, install the additional dependencies with:
-```bash
-pip install hydra-optuna-sweeper
-```
-
-To run the example with the default Hydra launcher, run:
-```bash
-python example/train.py +optim=optuna
-```
-
-To run the example with clusterduck, run:
-```bash
-python example/train.py +optim=optuna_clusterduck +platform=slurm_debug
-```
+- **use_srun** (`bool`, default: `True`): If `True`, the python command will be launched by srun. If `False`, the python command is run directly inside the job.
+- **do_submit** (`bool`, default: `True`): If `False`, create the submission file but do not actually submit it.
+- **local_debug** (`bool`, default: `False`): If `True`, this is a shortcut for `use_srun=False` and `do_submit=False`. This generates a script that can be executed locally as a standard shell script.

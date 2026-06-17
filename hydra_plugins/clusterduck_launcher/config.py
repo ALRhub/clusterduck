@@ -5,11 +5,13 @@ from hydra.core.config_store import ConfigStore
 
 
 @dataclass
-class BaseQueueConf:
-    """Configuration shared by all executors"""
+class ClusterDuckLauncherConf:
 
-    submitit_folder: str = "${hydra.sweep.dir}/submitit/%j"
+    _target_: str = (
+        "hydra_plugins.clusterduck_launcher.clusterduck_launcher.ClusterDuckLauncher"
+    )
 
+    ## Slurm Settings (see https://slurm.schedmd.com/sbatch.html)
     # maximum time for the job in minutes
     timeout_min: int = 60
     # number of cpus to use for each task
@@ -24,42 +26,6 @@ class BaseQueueConf:
     nodes: int = 1
     # name of the job
     name: str = "${hydra.job.name}"
-    # redirect stderr to stdout
-    stderr_to_stdout: bool = False
-
-    # Following parameters are clusterduck specific
-    # number of tasks (i.e. hydra jobs) to spawn in parallel on each node
-    parallel_runs_per_node: int = 1
-    # number of tasks (i.e. hydra jobs) to complete in total in each slurm job
-    # leave None to execute all overrides in a single slurm job
-    total_runs_per_node: Optional[int] = None
-    # wait until slurm jobs finish before exiting Python script
-    wait_for_completion: bool = False
-    # resources that should be divided up among parallel task executions
-    # e.g. resources_config: [cuda, cpu]
-    # additional configuration for resources should be included as a DictConfig
-    # beneath the resource name
-    # e.g.
-    # resources_config:
-    #   - stagger:
-    #       delay: 10
-    resources_config: dict[str, Optional[dict]] = field(default_factory=dict)
-    # whether to print debug statements to the SLURM stdout log file
-    verbose: bool = False
-
-
-@dataclass
-class SlurmQueueConf(BaseQueueConf):
-    """Slurm configuration overrides and specific parameters"""
-
-    _target_: str = "hydra_plugins.clusterduck_launcher.clusterduck_launcher.ClusterDuckSlurmLauncher"
-
-    # Params are used to configure sbatch, for more info check:
-    # https://github.com/facebookincubator/submitit/blob/main/submitit/slurm/slurm.py
-
-    # Following parameters are slurm specific
-    # More information: https://slurm.schedmd.com/sbatch.html
-    #
     # slurm partition to use on the cluster
     partition: Optional[str] = None
     qos: Optional[str] = None
@@ -73,44 +39,37 @@ class SlurmQueueConf(BaseQueueConf):
     mem_per_cpu: Optional[str] = None
     account: Optional[str] = None
 
-    # Following parameters are submitit specifics
-    #
-    # USR1 signal delay before timeout
-    signal_delay_s: int = 120
-    # Maximum number of retries on job timeout.
-    # Change this only after you confirmed your code can handle re-submission
-    # by properly resuming from the latest stored checkpoint.
-    # check the following for more info on slurm_max_num_timeout
-    # https://github.com/facebookincubator/submitit/blob/main/docs/checkpointing.md
-    max_num_timeout: int = 0
-    # Useful to add parameters which are not currently available in the plugin.
-    # Eg: {"mail-user": "blublu@fb.com", "mail-type": "BEGIN"}
-    additional_parameters: Dict[str, Any] = field(default_factory=dict)
-    # Maximum number of jobs running in parallel
+    ## Clusterduck Settings
+    # Folder where the submission script, pickle and slurm logs will be stored.
+    log_folder: str = "${hydra.sweep.dir}/slurm"
+    # If `True`, redirect the standard error of the job to the same file as standard output.
+    stderr_to_stdout: bool = True
+    # Throttle array jobs to only have this many jobs running at once
     array_parallelism: int = 256
+    # Any additional arguments that should be passed to sbatch
+    sbatch_kwargs: Dict[str, Any] = field(default_factory=dict)
+    # Any additional arguments that should be passed to srun
+    srun_kwargs: Dict[str, Any] = field(default_factory=dict)
     # A list of commands to run in sbatch befure running srun
     setup: Optional[List[str]] = None
-    # Any additional arguments that should be passed to srun
-    srun_args: Optional[List[str]] = None
+    # A list of commands to run in sbatch after running srun
+    teardown: Optional[List[str]] = None
+    # If these environment variables are set and there are multiple tasks, clusterduck will create a subfolder for each task and set the environment variable to point to that subfolder. This is useful for avoiding conflicts between tasks when writing temporary files.
+    tmpdir_vars: Optional[List[str]] = field(default_factory=lambda: ["TMP", "TMPDIR"])
+
+    ## Debugging Settings
+    # If `True`, the python command will be launched by srun. If `False`, the python command is run directly inside the job.
+    use_srun: bool = True
+    # If `False`, create the submission file but do not actually submit it.
+    do_submit: bool = True
+    # If `True`, this is a shortcut for `use_srun=False` and `do_submit=False`. This generates a script that can be executed locally as a standard shell script.
+    local_debug: bool = False
 
 
-@dataclass
-class LocalQueueConf(BaseQueueConf):
-    _target_: str = "hydra_plugins.clusterduck_launcher.clusterduck_launcher.ClusterDuckLocalLauncher"
-
-
-# finally, register two different choices:
-ConfigStore.instance().store(
-    group="hydra/launcher",
-    name="clusterduck_local",
-    node=LocalQueueConf(),
-    provider="clusterduck",
-)
-
-
+# finally, register the config type:
 ConfigStore.instance().store(
     group="hydra/launcher",
     name="clusterduck_slurm",
-    node=SlurmQueueConf(),
+    node=ClusterDuckLauncherConf(),
     provider="clusterduck",
 )
