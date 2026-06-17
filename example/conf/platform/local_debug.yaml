@@ -9,4 +9,7 @@ hydra:
     local_debug: False
     do_submit: False
 
+    stderr_to_stdout: True
+    tasks_per_node: 1
+
   verbose: clusterduck

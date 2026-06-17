@@ -17,7 +17,7 @@ PARAMETER_SYNONYMS = {
     "tasks_per_node": "ntasks_per_node",
 }
 
-SPECIAL_KWARGS = ["array_count", "array_parallelism", "stderr_to_stdout"]
+SPECIAL_KWARGS = ["array_count", "array_parallelism"]
 
 
 log = logging.getLogger("clusterduck")

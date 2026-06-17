@@ -20,6 +20,7 @@ class ClusterDuckLauncher(Launcher):
     def __init__(
         self,
         log_folder: str,
+        stderr_to_stdout: bool = True,
         sbatch_kwargs: dict | None = None,
         srun_kwargs: dict | None = None,
         setup: Sequence[str] | None = None,
@@ -31,6 +32,7 @@ class ClusterDuckLauncher(Launcher):
         **kwargs: Any,
     ) -> None:
         self.log_folder = Path(log_folder).resolve()
+        self.stderr_to_stdout = stderr_to_stdout
         self.extra_sbatch_kwargs = sbatch_kwargs or {}
         self.srun_kwargs = srun_kwargs or {}
         self.setup_ = setup or []
@@ -149,7 +151,6 @@ class ClusterDuckLauncher(Launcher):
             setup.insert(0, "export LOCAL_RANK=0")
 
         ## Construct log file names
-        stderr_to_stdout = sbatch_kwargs.pop("stderr_to_stdout", True)
         # %A is actually always the correct job id, even with single jobs
         # %j returns a different id for each job in a job array, so we can only
         # use it if we have a single job
@@ -157,7 +158,7 @@ class ClusterDuckLauncher(Launcher):
         log_name_prefix = "%j" if num_jobs == 1 else "%A_%a"
 
         sbatch_kwargs["output"] = str(self.log_folder / f"{log_name_prefix}_out.log")
-        if not stderr_to_stdout:
+        if not self.stderr_to_stdout:
             sbatch_kwargs["error"] = str(self.log_folder / f"{log_name_prefix}_err.log")
 
         sbatch_kwargs["open-mode"] = "append"
@@ -170,7 +171,7 @@ class ClusterDuckLauncher(Launcher):
             log_name_prefix += "_task_%t"
 
             srun_kwargs["output"] = str(self.log_folder / f"{log_name_prefix}_out.log")
-            if not stderr_to_stdout:
+            if not self.stderr_to_stdout:
                 srun_kwargs["error"] = str(
                     self.log_folder / f"{log_name_prefix}_err.log"
                 )
