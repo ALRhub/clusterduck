@@ -23,3 +23,7 @@ hydra:
       # NOTE: wandb folder will be deleted after job completion, but by then it will have synced with server
       - export WANDB_DIR=$TMPDIR/wandb
       - mkdir -pv $WANDB_DIR
+      - echo "[$(date +'%Y-%m-%d %H:%M:%S,%3N')] Setup for job $SLURM_JOB_ID"
+
+    teardown:
+      - echo "[$(date +'%Y-%m-%d %H:%M:%S,%3N')] Teardown for job $SLURM_JOB_ID"

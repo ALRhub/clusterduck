@@ -8,10 +8,9 @@ hydra:
   mode: MULTIRUN  # needed for launcher to be used
   launcher:
     # general
-    account: hk-project-p0024023
-    partition: accelerated
+    account: hai_XXXX
+    partition: booster
     exclude: null # add any broken nodes here
-    constraint: LSDF
 
     # compute resources
     timeout_min: 2880  # 48 hours
@@ -22,10 +21,6 @@ hydra:
     tasks_per_node: 4  # run 4 tasks in parallel on the same node, each using 1 gpu (total 4 gpus per node)
 
     setup:
-      # Create wandb folder in fast, job-local storage: https://www.nhr.kit.edu/userdocs/horeka/filesystems/#tmpdir
-      # NOTE: wandb folder will be deleted after job completion, but by then it will have synced with server
-      - export WANDB_DIR=$TMPDIR/wandb
-      - mkdir -pv $WANDB_DIR
       - echo "[$(date +'%Y-%m-%d %H:%M:%S,%3N')] Setup for job $SLURM_JOB_ID"
 
     teardown:
