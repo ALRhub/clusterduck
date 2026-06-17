@@ -8,7 +8,7 @@ hydra:
   mode: MULTIRUN  # needed for launcher to be used
   launcher:
     # general
-    account: hai_XXXX
+    account: EXAMPLE
     partition: booster
     exclude: null # add any broken nodes here
 

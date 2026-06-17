@@ -8,7 +8,7 @@ hydra:
   mode: MULTIRUN  # needed for launcher to be used
   launcher:
     # general
-    account: hai_XXXX
+    account: EXAMPLE
     partition: booster
     exclude: null # add any broken nodes here
 
@@ -16,8 +16,6 @@ hydra:
     timeout_min: 2880  # 48 hours
     gres: gpu:4  # request 4 gpus per job, but we'll actually use 1 per task and run 4 tasks in parallel on the same node
     cpus_per_task: 38
-
-    tasks_per_node: 1  # run 4 tasks in parallel on the same node, each using 1 gpu (total 4 gpus per node)
 
     setup:
       - echo "[$(date +'%Y-%m-%d %H:%M:%S,%3N')] Setup for job $SLURM_JOB_ID"

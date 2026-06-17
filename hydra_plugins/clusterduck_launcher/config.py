@@ -11,9 +11,7 @@ class ClusterDuckLauncherConf:
         "hydra_plugins.clusterduck_launcher.clusterduck_launcher.ClusterDuckLauncher"
     )
 
-    # Following parameters map directly to sbatch parameters.
-    # For more info check: https://slurm.schedmd.com/sbatch.html
-
+    ## Slurm Settings (see https://slurm.schedmd.com/sbatch.html)
     # maximum time for the job in minutes
     timeout_min: int = 60
     # number of cpus to use for each task
@@ -41,7 +39,7 @@ class ClusterDuckLauncherConf:
     mem_per_cpu: Optional[str] = None
     account: Optional[str] = None
 
-    ## Following parameters are used by clusterduck
+    ## Clusterduck Settings
     # Folder where the submission script, pickle and slurm logs will be stored.
     log_folder: str = "${hydra.sweep.dir}/slurm"
     # If `True`, redirect the standard error of the job to the same file as standard output.
@@ -59,7 +57,7 @@ class ClusterDuckLauncherConf:
     # If these environment variables are set and there are multiple tasks, clusterduck will create a subfolder for each task and set the environment variable to point to that subfolder. This is useful for avoiding conflicts between tasks when writing temporary files.
     tmpdir_vars: Optional[List[str]] = field(default_factory=lambda: ["TMP", "TMPDIR"])
 
-    ## Following parameters are mostly for debugging
+    ## Debugging Settings
     # If `True`, the python command will be launched by srun. If `False`, the python command is run directly inside the job.
     use_srun: bool = True
     # If `False`, create the submission file but do not actually submit it.
