@@ -116,6 +116,8 @@ Because the clusterduck launcher does not wait for the jobs to complete, it is n
 
 ## Reference
 
+### Slurm Settings (see https://slurm.schedmd.com/sbatch.html)
+
 - **timeout_min** (`int`, default: `60`): maximum time for the job in minutes
 - **cpus_per_task** (`Optional[int]`, default: `None`): number of cpus to use for each task
 - **gpus_per_node** (`Optional[int]`, default: `None`): number of gpus to use on each node
@@ -134,6 +136,9 @@ Because the clusterduck launcher does not wait for the jobs to complete, it is n
 - **mem_per_gpu** (`Optional[str]`, default: `None`)
 - **mem_per_cpu** (`Optional[str]`, default: `None`)
 - **account** (`Optional[str]`, default: `None`)
+
+### Clusterduck Settings
+
 - **log_folder** (`str`, default: `'${hydra.sweep.dir}/slurm'`): Folder where the submission script, pickle and slurm logs will be stored.
 - **stderr_to_stdout** (`bool`, default: `True`): If `True`, redirect the standard error of the job to the same file as standard output.
 - **array_parallelism** (`int`, default: `256`): Throttle array jobs to only have this many jobs running at once
@@ -142,6 +147,9 @@ Because the clusterduck launcher does not wait for the jobs to complete, it is n
 - **setup** (`Optional[List[str]]`, default: `None`): A list of commands to run in sbatch befure running srun
 - **teardown** (`Optional[List[str]]`, default: `None`): A list of commands to run in sbatch after running srun
 - **tmpdir_vars** (`Optional[List[str]]`, default: `['TMP', 'TMPDIR']`): If these environment variables are set and there are multiple tasks, clusterduck will create a subfolder for each task and set the environment variable to point to that subfolder. This is useful for avoiding conflicts between tasks when writing temporary files.
+
+### Debugging Settings
+
 - **use_srun** (`bool`, default: `True`): If `True`, the python command will be launched by srun. If `False`, the python command is run directly inside the job.
 - **do_submit** (`bool`, default: `True`): If `False`, create the submission file but do not actually submit it.
 - **local_debug** (`bool`, default: `False`): If `True`, this is a shortcut for `use_srun=False` and `do_submit=False`. This generates a script that can be executed locally as a standard shell script.
