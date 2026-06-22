@@ -139,7 +139,10 @@ class SlurmJobEnvironment:
         "SLURM_ARRAY_TASK_ID",
         "SLURM_STEP_ID",
         "SLURM_PROCID",
+        "SLURM_LOCALID",
         "SLURM_NTASKS",
+        "SLURM_CPUS_PER_TASK",
+        "SLURM_CPUS_ON_NODE",
         "SLURM_JOB_GPUS",
         "SLURM_STEP_GPUS",
         "CUDA_VISIBLE_DEVICES",
@@ -147,13 +150,16 @@ class SlurmJobEnvironment:
     ]
 
     def __post_init__(self):
+        # triggers getting job info from scontrol
+        _ = self.scontrol_job_info
+
+        for key in self.ENV_VARS_TO_LOG:
+            log.debug(f"Env variable {key}={os.environ.get(key, '[UNSET]')}")
+
         self.detect_cpu()
         self.detect_mem()
         self.detect_alloc_mem()
         self.detect_gpu()
-
-        for key in self.ENV_VARS_TO_LOG:
-            log.debug(f"Env variable {key}={os.environ.get(key, '[UNSET]')}")
 
     @cached_property
     def job_id(self) -> str:
@@ -161,14 +167,24 @@ class SlurmJobEnvironment:
         return self.try_get_env_var("SLURM_JOB_ID", default="LOCAL")
 
     @cached_property
+    def is_slurm_job(self) -> bool:
+        """Returns True if the job is running inside a slurm allocation."""
+        return self.job_id != "LOCAL"
+
+    @cached_property
     def array_job_id(self) -> str:
-        """Fetches the job id from the environment variable set by slurm."""
+        """Fetches the array job id from the environment variable set by slurm."""
         return self.try_get_env_var("SLURM_ARRAY_JOB_ID", default="LOCAL")
 
     @cached_property
     def array_index(self) -> int:
-        """Fetches the array id from the environment variable set by slurm."""
+        """Fetches the array index from the environment variable set by slurm."""
         return int(self.try_get_env_var("SLURM_ARRAY_TASK_ID", default=0))
+
+    @cached_property
+    def is_array_job(self) -> bool:
+        """Returns True if the job is an array job."""
+        return self.array_job_id != "LOCAL"
 
     @cached_property
     def task_index(self) -> int:
@@ -209,16 +225,40 @@ class SlurmJobEnvironment:
                     f"Could not find {key} in environment variables. Make sure that the job is running inside a slurm allocation."
                 )
 
+    @cached_property
+    def scontrol_job_info(self) -> str | None:
+        if not self.is_slurm_job:
+            # skip detection if we are not running inside a slurm job
+            return
+
+        if self.is_array_job:
+            # for array jobs, we want to query the job info for the specific
+            # subjob, otherwise we might get information about all subjobs
+            # in the array
+            job_id = f"{self.array_job_id}_{self.array_index}"
+        else:
+            job_id = self.job_id
+
+        try:
+            job_info = run_command(["scontrol", "show", "job", job_id])
+            log.debug(f"scontrol show job:\n{job_info}")
+            return job_info
+
+        except RuntimeError as e:
+            log.debug(f"Failed to run 'scontrol show job': {e}")
+
     @staticmethod
     def detect_cpu() -> None:
         try:
             import psutil
 
-            log.debug(f"[psutil] total #CPUs: {psutil.cpu_count()}")
+            p = psutil.Process()
+            aff = p.cpu_affinity()
+
+            log.debug(f"[psutil] node CPU count (logical cores): {psutil.cpu_count()}")
             log.debug(
-                f"[psutil] available #CPUs: {len(psutil.Process().cpu_affinity())}"
+                f"[psutil] task CPU affinity (logical cores): {sorted(aff)} count: {len(aff)}"
             )
-            log.debug(f"[psutil] CPU affinity: {psutil.Process().cpu_affinity()}")
 
             return
 
@@ -227,9 +267,11 @@ class SlurmJobEnvironment:
 
         import multiprocessing as mp
 
-        log.debug(f"[mp] total #CPUs: {mp.cpu_count()}")
-        log.debug(f"[os] available #CPUs: {len(os.sched_getaffinity(0))}")
-        log.debug(f"[os] CPU affinity: {list(os.sched_getaffinity(0))}")
+        aff = os.sched_getaffinity(0)
+        log.debug(f"[mp] node CPU count (logical cores): {mp.cpu_count()}")
+        log.debug(
+            f"[os] task CPU affinity (logical cores): {sorted(aff)} count: {len(aff)}"
+        )
 
     @staticmethod
     def detect_mem() -> None:
@@ -258,23 +300,16 @@ class SlurmJobEnvironment:
         the node, since slurm can be configured to allocate only a subset of
         the total memory to each job.
         """
-        if self.job_id == "LOCAL":
-            # skip detection if we are not running inside a slurm job
-            return
+        job_info = self.scontrol_job_info
 
-        try:
-            scontrol_output = run_command(["scontrol", "show", "job", str(self.job_id)])
-        except RuntimeError as e:
-            log.debug(f"Could not run scontrol to detect allocated memory: {e}")
-            return
-
-        mem = extract_tres_allocated_memory(scontrol_output)
-        if mem:
-            log.debug(f"[scontrol] job allocated memory: {mem}")
-        else:
-            log.debug(
-                f"Could not detect allocated memory from scontrol output: \n\n {scontrol_output}"
-            )
+        if job_info is not None:
+            mem = extract_tres_allocated_memory(job_info)
+            if mem:
+                log.debug(f"[scontrol] job allocated memory: {mem}")
+            else:
+                log.debug(
+                    f"Could not detect allocated memory from scontrol output: \n\n {job_info}"
+                )
 
     @staticmethod
     def detect_gpu() -> None:
@@ -304,23 +339,23 @@ class SlurmJobEnvironment:
         log.debug("Could not detect GPUs. Neither pycuda nor pytorch is installed.")
 
 
-def extract_tres_allocated_memory(scontrol_output: str) -> str | None:
+def extract_tres_allocated_memory(scontrol_job_info: str) -> str | None:
     """
-    Parses scontrol output to find the TRES memory allocation.
+    Parses the output of `scontrol show job` to find the TRES memory allocation.
     Makes minimal assumptions about line numbers, ordering, or spacing.
+    Supports both the legacy TRES= field and the newer AllocTRES=/ReqTRES= split.
     """
-    # 1. Locate the TRES field. \bTRES=(\S+) looks for 'TRES='
-    # and captures all non-whitespace characters belonging to that field.
-    tres_match = re.search(r"\bTRES=(\S+)", scontrol_output)
-    if not tres_match:
-        return None
+    for field in ("AllocTRES", "ReqTRES", "TRES"):
+        # 1. Locate the TRES field. \bTRES=(\S+) looks for 'TRES='
+        # and captures all non-whitespace characters belonging to that field.
+        match = re.search(rf"\b{field}=(\S+)", scontrol_job_info)
+        if not match:
+            continue
 
-    tres_value = tres_match.group(1)
-
-    # 2. Within the TRES string (e.g., "cpu=64,mem=128000M,node=1"),
-    # extract the value following "mem=" up until the next comma or end of string.
-    mem_match = re.search(r"\bmem=([^,]+)", tres_value)
-    if mem_match:
-        return mem_match.group(1)
+        # 2. Within the TRES string (e.g., "cpu=64,mem=128000M,node=1"),
+        # extract the value following "mem=" up until the next comma or end of string.
+        mem_match = re.search(r"\bmem=([^,]+)", match.group(1))
+        if mem_match:
+            return mem_match.group(1)
 
     return None
