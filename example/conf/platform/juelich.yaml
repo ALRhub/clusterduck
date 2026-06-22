@@ -13,7 +13,7 @@ hydra:
     exclude: null # add any broken nodes here
 
     # compute resources
-    timeout_min: 2880  # 48 hours
+    timeout_min: 1440  # 24 hours
     gres: gpu:4  # request 4 gpus per job, but we'll actually use 1 per task and run 4 tasks in parallel on the same node
     cpus_per_task: 38
 
