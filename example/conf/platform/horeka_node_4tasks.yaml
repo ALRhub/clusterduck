@@ -1,5 +1,11 @@
 # @package _global_
 
+######
+# This example config requests a job with 4 GPUs and 152 CPU cores.
+# Inside the job it schedules 4 tasks in parallel, each using 1 GPU and 38 CPU cores (152/4=38).
+# NOTE: This config is only for completeness and there is no reason to actually use it on horeka.
+######
+
 defaults:
   - override /hydra/launcher: clusterduck_slurm
   - _self_
@@ -11,12 +17,15 @@ hydra:
     account: EXAMPLE
     partition: accelerated
     exclude: null # add any broken nodes here
-    constraint: LSDF
+    constraint: LSDF  # make the LSDF available at $LSDF
 
     # compute resources
     timeout_min: 2880  # 48 hours
-    gres: gpu:1
-    cpus_per_task: 38
+    gres: gpu:4  # request 4 gpus per job (1 per task)
+    cpus_per_task: 38  # there are 152 cpus per node (152/4=38)
+    gpus_per_task: 1
+
+    tasks_per_node: 4  # run 4 tasks in parallel on the same node, each using 1 gpu and 38 cpus
 
     setup:
       - echo "[$(date +'%Y-%m-%d %H:%M:%S,%3N')] Setup for job $SLURM_JOB_ID"

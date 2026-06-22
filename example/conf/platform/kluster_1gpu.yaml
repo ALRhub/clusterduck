@@ -1,5 +1,9 @@
 # @package _global_
 
+######
+# This example config requests a job with 1 GPU and 4 CPU cores.
+######
+
 defaults:
   - override /hydra/launcher: clusterduck_slurm
   - _self_
@@ -8,14 +12,15 @@ hydra:
   mode: MULTIRUN  # needed for launcher to be used
   launcher:
     # general
-    name: 3d-sim2real  # a nice name since others can see our job in squeue
+    name: my job  # a nice name since others can see our job in squeue
     partition: gpu
     # exclude: node[4-5]  # uncomment this to exclude nodes without enough VRAM
     
     # compute resources
     timeout_min: 2880  # 48 hours
-    gres: gpu:1
+    gres: gpu:1  # request 1 gpu per job
     cpus_per_task: 4  # there are 20 cpus per node
+    # NOTE: even if you request 5 CPUs, you will only get 4.
     mem_per_cpu: 7500  # in MB (* 16 cpus = 120GB)
 
     setup:

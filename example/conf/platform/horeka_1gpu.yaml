@@ -1,5 +1,9 @@
 # @package _global_
 
+######
+# This example config requests a job with 1 GPU and 38 CPU cores (152/4=38).
+######
+
 defaults:
   - override /hydra/launcher: clusterduck_slurm
   - _self_
@@ -11,15 +15,12 @@ hydra:
     account: EXAMPLE
     partition: accelerated
     exclude: null # add any broken nodes here
-    constraint: LSDF
+    constraint: LSDF  # make the LSDF available at $LSDF
 
     # compute resources
     timeout_min: 2880  # 48 hours
-    gres: gpu:4  # request 4 gpus per job, but we'll actually use 1 per task and run 4 tasks in parallel on the same node
-    cpus_per_task: 38
-    gpus_per_task: 1
-
-    tasks_per_node: 4  # run 4 tasks in parallel on the same node, each using 1 gpu (total 4 gpus per node)
+    gres: gpu:1  # request 1 gpu per job
+    cpus_per_task: 38  # there are 152 cpus per node (152/4=38)
 
     setup:
       - echo "[$(date +'%Y-%m-%d %H:%M:%S,%3N')] Setup for job $SLURM_JOB_ID"

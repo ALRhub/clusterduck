@@ -1,5 +1,11 @@
 # @package _global_
 
+######
+# This example config requests a job with 4 GPUs and 20 CPU cores.
+# Inside the job it schedules 4 tasks in parallel, each using 1 GPU and 4 CPU cores.
+# NOTE: This config is only for completeness and there is no reason to actually use it on the kluster.
+######
+
 defaults:
   - override /hydra/launcher: clusterduck_slurm
   - _self_
@@ -8,17 +14,18 @@ hydra:
   mode: MULTIRUN  # needed for launcher to be used
   launcher:
     # general
-    name: 3d-sim2real  # a nice name since others can see our job in squeue
+    name: my job  # a nice name since others can see our job in squeue
     partition: gpu
     # exclude: node[4-5]  # uncomment this to exclude nodes without enough VRAM
     
     # compute resources
     timeout_min: 2880  # 48 hours
-    gres: gpu:4  # request 4 gpus per job, but we'll actually use 1 per task and run 4 tasks in parallel on the same node
+    gres: gpu:4  # request 4 gpus per job (1 per task)
     cpus_per_task: 4  # there are 20 cpus per node
+    # NOTE: even if you request 5 CPUs, you will only get 4.
     mem_per_cpu: 7500  # in MB (* 16 cpus = 120GB)
 
-    tasks_per_node: 4
+    tasks_per_node: 4  # run 4 tasks in parallel on the same node, each using 1 gpu and 4 cpus
     sbatch_kwargs:
       # Each gpu should be used exclusively by one task.
       # This is set automatically by gpus_per_task, but this option is not
