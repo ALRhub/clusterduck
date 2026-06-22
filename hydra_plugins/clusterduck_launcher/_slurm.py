@@ -260,7 +260,7 @@ class SlurmJobEnvironment:
                 f"[psutil] task CPU affinity (logical cores): {sorted(aff)} count: {len(aff)}"
             )
 
-            return
+            # return
 
         except ImportError:
             pass
@@ -279,7 +279,7 @@ class SlurmJobEnvironment:
             import psutil
 
             log.debug(
-                f"[psutil] Total memory: {psutil.virtual_memory().total / (1024 ** 3):.3f}G"
+                f"[psutil] node memory: {psutil.virtual_memory().total / (1024 ** 3):.3f}G"
             )
 
             return
@@ -288,7 +288,7 @@ class SlurmJobEnvironment:
             pass
 
         log.debug(
-            f"[os] Total memory: {os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES') / (1024 ** 3):.3f}G"
+            f"[os] node memory: {os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES') / (1024 ** 3):.3f}G"
         )
 
     def detect_alloc_mem(self) -> None:
